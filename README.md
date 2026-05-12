@@ -122,6 +122,18 @@ scion manifest push                           # push manifest to dashboard (main
 
 `--root` can be passed to any command, or set via `SCION_ROOT`, or stored in `~/.config/scion/config.toml`.
 
+## Per-cluster environment overrides
+
+A `cluster.toml` placed at the install root (`{root}/cluster.toml`) lets the maintainer set environment variables Scion applies to every subprocess it spawns — worker startup, `scion check`, and the `scion install --models` prebuild. Three optional tables:
+
+```toml
+[env]          # always applied
+[login_env]    # only outside a PBS/SLURM batch job
+[compute_env]  # only inside a PBS/SLURM batch job
+```
+
+Job detection looks at `PBS_JOBID` (Polaris) and `SLURM_JOB_ID` (Della, Perlmutter). See `cluster.toml.example` for a Polaris-ready starter that caps `OMP_NUM_THREADS=1` on login nodes (avoids the `libgomp: Thread creation failed` crash when loading large models on the shared login tier).
+
 ## Setting up a new cluster
 
 Maintainer flow:

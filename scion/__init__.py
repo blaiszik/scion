@@ -10,6 +10,12 @@ __version__ = "0.1.0"
 
 from .capabilities import CAPABILITIES, EmbedResult, FoldResult
 from .client import ScionClient
+from .cluster_config import (
+    ClusterConfig,
+    get_cluster_env,
+    is_in_batch_job,
+    load_cluster_config,
+)
 from .clusters import (
     CLUSTER_REGISTRY,
     KNOWN_ENVIRONMENTS,
@@ -45,6 +51,10 @@ __all__ = [
     "ScionSession",
     "ScionServer",
     "ScionClient",
+    "ClusterConfig",
+    "load_cluster_config",
+    "get_cluster_env",
+    "is_in_batch_job",
     "EnvironmentManager",
     "list_environments",
     "list_built_environments",

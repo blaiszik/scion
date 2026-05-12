@@ -233,11 +233,13 @@ def _install_single_environment(
     shutil.copy(env_source, env_target / "env_source.py")
 
     if models:
+        from ..cluster_config import get_cluster_env
+
         model_list = [m.strip() for m in models.split(",")]
         print(f"5. Pre-downloading models: {model_list}")
 
         cache_env = get_model_cache_env(root)
-        env = {**os.environ, **cache_env}
+        env = {**os.environ, **cache_env, **get_cluster_env(root)}
 
         for model in model_list:
             print(f"   Downloading: {model}")

@@ -49,13 +49,18 @@ def cmd_check(args) -> int:
         print(f"Error: env_source.py missing in {env_dir}", file=sys.stderr)
         return 1
 
-    env = {**os.environ, **get_model_cache_env(root)}
+    from ..cluster_config import get_cluster_env
 
-    # Login nodes on shared HPC systems (Polaris, Perlmutter, ...) apply tight
-    # per-user RLIMIT_NPROC. Torch/MKL/OpenBLAS otherwise default to one thread
-    # per CPU core and fail with "libgomp: Thread creation failed: Resource
-    # temporarily unavailable". Cap to 1 thread by default for diagnostic
-    # runs — the user can override by exporting the variable explicitly.
+    env = {**os.environ, **get_model_cache_env(root)}
+    # Per-cluster overlay (e.g. Polaris login_env caps OMP/MKL/OPENBLAS to 1).
+    env.update(get_cluster_env(root))
+
+    # Diagnostic-only fallback: if no cluster.toml exists and the user hasn't
+    # set them, cap thread libs to 1. Login nodes on shared HPC systems apply
+    # tight per-user RLIMIT_NPROC; PyTorch/MKL/OpenBLAS otherwise spawn one
+    # thread per CPU core and crash with "libgomp: Thread creation failed".
+    # This is only baked into `check` because it's the triage path users hit
+    # before cluster.toml is even in place.
     for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
         env.setdefault(var, "1")
 

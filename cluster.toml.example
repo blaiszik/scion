@@ -1,0 +1,32 @@
+# Per-cluster runtime overrides for Scion.
+#
+# Copy this file to {root}/cluster.toml on your install (e.g.
+# /lus/eagle/projects/Garden-Ai/scion/cluster.toml on Polaris).
+# Scion picks it up automatically — worker spawn, `scion check`, and the
+# `--models` prebuild step all apply the matching overlay.
+#
+# Three tables, all optional:
+#   [env]          always applied
+#   [login_env]    only when *not* inside a PBS/SLURM batch job
+#   [compute_env]  only when inside a PBS/SLURM batch job
+#
+# Job detection: PBS_JOBID (PBS Pro: Polaris) or SLURM_JOB_ID (SLURM: Della, Perlmutter).
+
+# ---------------------------------------------------------------------------
+# Polaris (ALCF) — login nodes apply tight RLIMIT_NPROC, so any of torch /
+# MKL / OpenBLAS spinning up one thread per CPU core (64+) crashes with
+# `libgomp: Thread creation failed: Resource temporarily unavailable` before
+# the model can even load. Cap to 1 on the login node; let compute jobs
+# use whatever the user sets.
+# ---------------------------------------------------------------------------
+[login_env]
+OMP_NUM_THREADS = "1"
+MKL_NUM_THREADS = "1"
+OPENBLAS_NUM_THREADS = "1"
+
+# Example: if compute nodes ever lose direct outbound and need the ALCF
+# proxy for HF Hub / torch.hub downloads, add it here. Leave commented
+# unless you actually hit a download failure inside a job.
+# [compute_env]
+# HTTPS_PROXY = "http://proxy.alcf.anl.gov:3128"
+# HTTP_PROXY  = "http://proxy.alcf.anl.gov:3128"

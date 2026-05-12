@@ -115,9 +115,19 @@ class EnvironmentManager:
         return [str(env_python), str(wrapper_path)]
 
     def get_environment_variables(self) -> dict[str, str]:
-        """Environment variables to set for the worker process."""
+        """
+        Environment variables to set for the worker process.
+
+        Layering (later wins):
+          1. inherited os.environ
+          2. cache redirection (HOME, XDG_CACHE_HOME, HF_*, TORCH_HOME)
+          3. {root}/cluster.toml overlay (login_env or compute_env)
+        """
+        from .cluster_config import get_cluster_env
+
         env = os.environ.copy()
         env.update(get_model_cache_env(self.root))
+        env.update(get_cluster_env(self.root))
         return env
 
     def cleanup(self):
