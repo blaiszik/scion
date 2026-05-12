@@ -28,6 +28,7 @@ import os
 import sys
 
 from .commands import (
+    cmd_check,
     cmd_init,
     cmd_install,
     cmd_list,
@@ -97,6 +98,34 @@ def main():
     resolve_parser.add_argument("--cluster", required=True, help="Cluster name")
     resolve_parser.add_argument("--json", action="store_true", help="Output as JSON")
     resolve_parser.set_defaults(func=cmd_resolve)
+
+    # check
+    check_parser = subparsers.add_parser(
+        "check",
+        help="Diagnose a built env by calling its setup() directly (bypasses RPC)",
+        description=(
+            "Run the env's setup(model, device) inside its pre-built venv and "
+            "report success/failure with full stdout/stderr. Useful for "
+            "isolating model-download or import errors from the RPC layer."
+        ),
+    )
+    check_parser.add_argument("env_name", help="Environment name (e.g., esm2_env)")
+    check_parser.add_argument(
+        "--model",
+        default=None,
+        help="Checkpoint name to pass to setup() (default: env's own default)",
+    )
+    check_parser.add_argument(
+        "--device",
+        default="cpu",
+        help="Device passed to setup() (default: cpu — safest for login nodes)",
+    )
+    check_parser.add_argument(
+        "--root",
+        default=os.environ.get(SCION_ROOT_ENV),
+        help=f"Root directory (default: ${SCION_ROOT_ENV})",
+    )
+    check_parser.set_defaults(func=cmd_check)
 
     # serve
     serve_parser = subparsers.add_parser(
