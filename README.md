@@ -6,30 +6,32 @@ Scion is the protein sibling of [Rootstock](https://github.com/Garden-AI/rootsto
 
 ## Status
 
-Scion is **early-stage software**. The v0 skeleton covers two capabilities:
+Scion is **early-stage software**. The v0 skeleton ships:
 
-- **`fold`** — sequence → structure (Boltz-2, ESMFold, Chai)
-- **`embed`** — sequence → embeddings (ESM2, ESM-C)
+- **`fold`** capability — sequence → structure. `boltz_env` reference file is contract-only (raises `NotImplementedError` where `boltz.main.predict` should be called); `esmfold_env` and `chai_env` are planned.
+- **`embed`** capability — sequence → embeddings. `esm2_env` is **fully wired** against `fair-esm` (per-residue + mean-pooled per-sequence, optional contacts). `esmc_env` is planned.
 
-Planned: `design_sequence` (ProteinMPNN, LigandMPNN), `generate` (RFDiffusion, Chroma), `dock` (DiffDock, NeuralPLexer), `score` (ThermoMPNN, AF-Multimer iptm).
+Planned capabilities: `design_sequence` (ProteinMPNN, LigandMPNN), `generate` (RFDiffusion, Chroma), `dock` (DiffDock, NeuralPLexer), `score` (ThermoMPNN, AF-Multimer iptm). The wire protocol is method-name-dispatched, so adding one is a new env file + a new client class.
 
 ## Quick start
 
 ```python
 from scion import Folder, Embedder
 
-with Folder(cluster="della", model="boltz", checkpoint="boltz2", device="cuda") as folder:
-    result = folder.fold("MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ")
-    print(result.mmcif[:200])
-    print(result.confidence["plddt_mean"])
-
+# Embed (esm2_env is wired in v0)
 with Embedder(cluster="della", model="esm2", checkpoint="esm2_t33_650M_UR50D") as embedder:
     result = embedder.embed(["MKTAYIAKQRQISFVKSHFSRQ"])
     print(result.per_residue.shape)   # (1, 22, 1280)
     print(result.per_sequence.shape)  # (1, 1280)
+
+# Fold (boltz_env contract; provider call is the v0 TODO)
+with Folder(cluster="della", model="boltz", checkpoint="boltz2", device="cuda") as folder:
+    result = folder.fold("MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ")
+    print(result.mmcif[:200])
+    print(result.confidence["plddt_mean"])
 ```
 
-Swapping `model="boltz"` to `model="esmfold"` swaps the underlying fold model with no other changes.
+`cluster="della"` resolves to a maintainer-installed shared directory (see `CLUSTER_REGISTRY`). For a custom path use `root="/path/to/scion"` instead of `cluster=...`. Swapping `model="boltz"` to `model="esmfold"` will swap the underlying fold model with no other code changes once those envs are added.
 
 ## Installation
 
@@ -93,30 +95,59 @@ provider.embed(
 
 ## Available models
 
-| Capability | Model | Environment | Default checkpoint |
-|------------|-------|-------------|--------------------|
-| fold | `boltz` | `boltz_env` | `boltz2` |
-| fold | `esmfold` | `esmfold_env` | `esmfold_v1` |
-| fold | `chai` | `chai_env` | `chai1` |
-| embed | `esm2` | `esm2_env` | `esm2_t33_650M_UR50D` |
-| embed | `esmc` | `esmc_env` | `esmc_300m` |
+| Capability | Model | Environment | Default checkpoint | v0 status |
+|------------|-------|-------------|--------------------|-----------|
+| fold | `boltz` | `boltz_env` | `boltz2` | contract-only (raises `NotImplementedError`) |
+| fold | `esmfold` | `esmfold_env` | `esmfold_v1` | planned |
+| fold | `chai` | `chai_env` | `chai1` | planned |
+| embed | `esm2` | `esm2_env` | `esm2_t33_650M_UR50D` | wired |
+| embed | `esmc` | `esmc_env` | `esmc_300m` | planned |
 
-Only `boltz_env` and `esm2_env` ship as v0 reference environments. Adding a new one is a small PEP 723 file in `environments/`.
+`environments/` ships `boltz_env.py` (skeleton showing the fold contract) and `esm2_env.py` (working `embed` against `fair-esm`). Adding another model is a small PEP 723 file in the same directory.
+
+## CLI
+
+```bash
+scion init                                    # interactive setup of config + dirs + manifest
+scion install environments/esm2_env.py        # build an env from a file
+scion install environments/                   # build every *.py env in a directory
+scion install esm2_env --force                # rebuild a registered env
+scion status                                  # show envs, capabilities, cache sizes
+scion list                                    # list registered envs
+scion resolve --cluster della                 # look up a cluster's root path
+scion serve esm2 --socket /tmp/s --checkpoint esm2_t33_650M_UR50D --device cuda
+scion manifest show                           # dump installation manifest
+scion manifest push                           # push manifest to dashboard (maintainer only)
+```
+
+`--root` can be passed to any command, or set via `SCION_ROOT`, or stored in `~/.config/scion/config.toml`.
 
 ## Setting up a new cluster
 
-Maintainer flow mirrors Rootstock: `scion init`, then `scion install environments/boltz_env.py`, etc. See `scion --help`.
+Maintainer flow:
+
+```bash
+pip install scion
+scion init                                    # configure root + maintainer + (optional) API
+scion install environments/esm2_env.py        # builds an isolated venv under {root}/envs/
+scion install environments/boltz_env.py       # likewise for fold (once provider is wired)
+scion status                                  # confirm
+```
+
+Each `scion install` creates an isolated venv at `{root}/envs/{env_name}/` from the PEP 723 deps in the source file, copies the source in as `env_source.py`, installs Scion itself, and refreshes the manifest.
 
 ## Local development
 
 ```bash
-git clone https://github.com/Garden-AI/scion.git
+git clone https://github.com/blaiszik/scion.git
 cd scion
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 ruff check scion/
 pytest tests/
 ```
+
+The protocol round-trip tests (4 cases) verify framing, named blob attachment, numpy-array blob payloads, and large header round-trips. They run without GPU.
 
 ## Relationship to Rootstock
 
