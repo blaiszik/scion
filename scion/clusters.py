@@ -10,8 +10,8 @@ from pathlib import Path
 
 CLUSTER_REGISTRY: dict[str, str] = {
     "della": "/scratch/gpfs/ROSENGROUP/common/scion",
-    "sophia": "/eagle/Garden-Ai/scion",
-    "polaris": "/eagle/Garden-Ai/scion",
+    "sophia": "/lus/eagle/projects/Garden-Ai/scion",
+    "polaris": "/lus/eagle/projects/Garden-Ai/scion",
 }
 
 KNOWN_ENVIRONMENTS = ["boltz", "esmfold", "chai", "esm2", "esmc"]
