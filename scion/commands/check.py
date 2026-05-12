@@ -51,6 +51,14 @@ def cmd_check(args) -> int:
 
     env = {**os.environ, **get_model_cache_env(root)}
 
+    # Login nodes on shared HPC systems (Polaris, Perlmutter, ...) apply tight
+    # per-user RLIMIT_NPROC. Torch/MKL/OpenBLAS otherwise default to one thread
+    # per CPU core and fail with "libgomp: Thread creation failed: Resource
+    # temporarily unavailable". Cap to 1 thread by default for diagnostic
+    # runs — the user can override by exporting the variable explicitly.
+    for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+        env.setdefault(var, "1")
+
     script = textwrap.dedent(
         f"""\
         import sys, traceback
@@ -88,6 +96,9 @@ def cmd_check(args) -> int:
     print(f"  HOME:       {env.get('HOME')}")
     print(f"  TORCH_HOME: {env.get('TORCH_HOME')}")
     print(f"  HF_HOME:    {env.get('HF_HOME')}")
+    print(f"  Threads:    OMP={env.get('OMP_NUM_THREADS')} "
+          f"MKL={env.get('MKL_NUM_THREADS')} "
+          f"OPENBLAS={env.get('OPENBLAS_NUM_THREADS')}")
     print()
 
     proc = subprocess.run([str(env_python), "-c", script], env=env)
