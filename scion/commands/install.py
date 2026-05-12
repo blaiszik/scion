@@ -11,6 +11,26 @@ from pathlib import Path
 
 from .common import get_root_or_exit
 
+SCION_GIT_URL = "git+https://github.com/blaiszik/scion.git"
+
+
+def _resolve_scion_install_spec() -> str:
+    """
+    Return a pip-installable spec for installing scion into a worker venv.
+
+    If the current scion package is an editable install pointing at a real
+    source tree (i.e. ``<parent>/pyproject.toml`` exists), use that local
+    path so the worker venv runs the same code as the user's process.
+    Otherwise (a regular site-packages install via ``pip install git+...``
+    or eventually PyPI), fall back to the git URL.
+    """
+    import scion
+
+    candidate = Path(scion.__file__).resolve().parent.parent
+    if (candidate / "pyproject.toml").exists():
+        return str(candidate)
+    return SCION_GIT_URL
+
 
 def extract_minimum_python_version(requires_python: str) -> str:
     """Extract minimum Python version from a requires-python specifier."""
@@ -193,12 +213,11 @@ def _install_single_environment(
             return 1
 
     print("3. Installing scion...")
-    import scion
-
-    scion_path = Path(scion.__file__).parent.parent
+    scion_install_spec = _resolve_scion_install_spec()
+    print(f"   Source: {scion_install_spec}")
 
     result = subprocess.run(
-        ["uv", "pip", "install", "--python", str(env_python), str(scion_path)],
+        ["uv", "pip", "install", "--python", str(env_python), scion_install_spec],
         capture_output=not verbose,
         text=True,
         env=uv_env,
