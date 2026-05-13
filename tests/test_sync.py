@@ -122,6 +122,24 @@ def test_missing_worker_venv_is_reported_and_fails(tmp_path: Path, capsys):
     assert "worker venv missing" in err
 
 
+def test_missing_file_path_is_clearly_reported(tmp_path: Path, capsys):
+    """
+    If the user passes something that looks like a file path (contains
+    `/` or ends in `.py`) but the file doesn't exist, the command must
+    say so — not fall through to name mode and concatenate a nonsense
+    path like `<root>/environments/environments/boltz_env.py.py`.
+    """
+    root = _build_fake_root(tmp_path)
+    rc = cmd_sync(SimpleNamespace(
+        source="environments/missing.py", root=str(root), with_scion=False,
+    ))
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "file not found" in err.lower()
+    # And critically: the wrong-mode concatenated path should NOT appear.
+    assert "missing.py.py" not in err
+
+
 def test_invalid_source_rejected(tmp_path: Path, capsys):
     root = _build_fake_root(tmp_path)
     bad = tmp_path / "broken.py"

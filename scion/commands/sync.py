@@ -62,6 +62,13 @@ def cmd_sync(args) -> int:
 
     else:
         source_path = Path(source)
+        # Disambiguate file mode from name mode by intent, not just by
+        # whether the path happens to exist: if the user wrote something
+        # that obviously looks like a path (contains a separator or ends
+        # in .py), treat it as file mode even when the file is missing,
+        # so they get a clear "file not found" instead of a confusing
+        # concatenated path like `<root>/environments/foo/bar.py.py`.
+        looks_like_path = "/" in source or "\\" in source or source.endswith(".py")
 
         if source_path.is_file():
             # File mode: validate, register, then sync.
@@ -76,6 +83,17 @@ def cmd_sync(args) -> int:
             shutil.copy2(source_path, registered)
             print(f"Registered: {source_path} -> {registered}")
             pending.append((env_name, registered))
+
+        elif looks_like_path:
+            # User clearly meant a file, but it doesn't exist there.
+            print(
+                f"Error: file not found: {source}\n"
+                f"  Resolved from cwd {Path.cwd()}.\n"
+                f"  Run from a directory containing the file, or pass an "
+                f"absolute path.",
+                file=sys.stderr,
+            )
+            return 1
 
         else:
             # Name mode.
