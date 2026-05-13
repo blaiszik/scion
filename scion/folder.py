@@ -72,25 +72,54 @@ class Folder:
         msa: bytes | None = None,
         templates: bytes | None = None,
         num_recycles: int = 3,
+        ligands: list[dict] | None = None,
+        nucleic_acids: list[dict] | None = None,
+        predict_affinity: bool = False,
+        affinity_binder: str | None = None,
         **extra: Any,
     ) -> FoldResult:
         """
-        Predict a structure for ``sequence`` (FASTA-style, single chain
-        or list of chains for a multimer).
+        Predict a structure (and optionally a binding affinity).
 
-        ``msa`` and ``templates`` are optional binary blobs (A3M, CIF)
-        forwarded to the provider. Extra kwargs flow through to the
-        provider's ``fold(...)`` method.
+        Args:
+            sequence: Protein sequence (str) or list of chains (multimer).
+            msa: Optional A3M MSA blob (bytes). If ``None``, single-sequence
+                prediction is used; no external MSA server is contacted.
+            templates: Optional CIF templates blob (provider-dependent).
+            num_recycles: Recycling steps. Defaults to 3.
+            ligands: Optional list of ligand dicts, each containing either
+                ``{"smiles": "..."}`` or ``{"ccd": "ATP"}``. An ``"id"``
+                key is honored if given, otherwise chain IDs are auto-
+                assigned. Required for protein-ligand co-folding.
+            nucleic_acids: Optional list of nucleic-acid dicts, each
+                ``{"type": "dna" | "rna", "sequence": "ATGC..."}``.
+            predict_affinity: If True, ask the provider to run its
+                binding-affinity head alongside structure prediction
+                (Boltz-2 supports this). Result is on
+                ``FoldResult.affinity``.
+            affinity_binder: Chain ID of the binder when predicting
+                affinity. Defaults to the first ligand if any are given.
+
+        Extra kwargs pass through to the provider's ``fold(...)`` method
+        and let provider-specific options (e.g. ``diffusion_samples``)
+        be set without a client-side bump.
         """
         args: dict[str, Any] = {
             "sequence": sequence,
             "num_recycles": int(num_recycles),
+            "predict_affinity": bool(predict_affinity),
             **extra,
         }
         if msa is not None:
             args["msa"] = msa
         if templates is not None:
             args["templates"] = templates
+        if ligands:
+            args["ligands"] = list(ligands)
+        if nucleic_acids:
+            args["nucleic_acids"] = list(nucleic_acids)
+        if affinity_binder is not None:
+            args["affinity_binder"] = affinity_binder
 
         reply = self._session.call("fold", args)
         payload = decode_result(reply)

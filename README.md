@@ -1,6 +1,6 @@
 # Scion
 
-Scion makes it easy to use protein foundation models on national lab and academic HPC clusters. Researchers can use multiple models (Boltz-2, ESMFold, Chai, ESM2, ESM-C, ProteinMPNN, RFDiffusion, ...) from a single Python interface without managing the conflicting Python environments that each model requires.
+Scion makes it easy to use protein foundation models for **small-molecule drug discovery** on national lab and academic HPC clusters. The primary focus is workflows that combine structure, ligand co-folding, binding affinity, and (eventually) docking and ligand-aware design — from a single Python interface, without managing the conflicting environments each model requires.
 
 Scion is the protein sibling of [Rootstock](https://github.com/Garden-AI/rootstock). Rootstock does this for machine-learned interatomic potentials; Scion does it for protein foundation models. A scion is the upper graft on a rootstock — same trunk, different fruit.
 
@@ -8,10 +8,10 @@ Scion is the protein sibling of [Rootstock](https://github.com/Garden-AI/rootsto
 
 Scion is **early-stage software**. The v0 skeleton ships:
 
-- **`fold`** capability — sequence → structure. `boltz_env` is **wired** (invokes the Boltz CLI in-process from the worker venv; returns mmCIF + confidence JSON); `esmfold_env` and `chai_env` are planned.
-- **`embed`** capability — sequence → embeddings. `esm2_env` is **fully wired** against `fair-esm` (per-residue + mean-pooled per-sequence, optional contacts). `esmc_env` is planned.
+- **`fold`** capability — sequence → structure, with protein-ligand co-folding, multimers, nucleic acids, and binding-affinity prediction. `boltz_env` is **wired** against the full Boltz-2 capability surface (CLI in-process from the worker venv; returns mmCIF + confidence JSON + affinity JSON).
+- **`embed`** capability — sequence → embeddings. `esm2_env` is **wired** against `fair-esm` (per-residue + mean-pooled per-sequence, optional contacts).
 
-Planned capabilities: `design_sequence` (ProteinMPNN, LigandMPNN), `generate` (RFDiffusion, Chroma), `dock` (DiffDock, NeuralPLexer), `score` (ThermoMPNN, AF-Multimer iptm). The wire protocol is method-name-dispatched, so adding one is a new env file + a new client class.
+Next on the drug-discovery roadmap: `dock` (DiffDock-L, NeuralPLexer) for fast virtual screening; `design_sequence` (LigandMPNN) for ligand-aware inverse folding / binder optimization. `esmfold_env` and `chai_env` are deferred — Boltz-2 covers the same ground with strictly more capabilities. The wire protocol is method-name-dispatched, so adding a new capability is a new env file + a new client class.
 
 ## Quick start
 
@@ -24,12 +24,29 @@ with Embedder(cluster="della", model="esm2", checkpoint="esm2_t33_650M_UR50D") a
     print(result.per_residue.shape)   # (1, 22, 1280)
     print(result.per_sequence.shape)  # (1, 1280)
 
-# Fold via Boltz-2 (writes input YAML, invokes the Boltz CLI in-process,
-# parses the resulting mmCIF + confidence JSON).
+# Fold a monomer via Boltz-2.
 with Folder(cluster="polaris", model="boltz", checkpoint="boltz2", device="cuda") as folder:
     result = folder.fold("MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ")
     print(result.mmcif[:200])
-    print(result.confidence)            # e.g. {"confidence_score": 0.83, "ptm": 0.45, ...}
+    print(result.confidence)             # {"confidence_score": 0.83, "ptm": 0.45, ...}
+
+# Protein-ligand co-fold + binding-affinity prediction (the drug-discovery path).
+with Folder(cluster="polaris", model="boltz", checkpoint="boltz2", device="cuda") as folder:
+    result = folder.fold(
+        sequence="MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ",
+        ligands=[{"smiles": "CC(=O)Oc1ccccc1C(=O)O"}],   # aspirin
+        predict_affinity=True,
+    )
+    print(result.confidence)             # structure-quality scores
+    print(result.affinity)               # {"kd": ..., "log_kd": ..., "binding_probability": ...}
+
+# Multimer + cofactor + DNA (Boltz-2 handles all chain types in one call).
+with Folder(cluster="polaris", model="boltz", device="cuda") as folder:
+    result = folder.fold(
+        sequence=["MKTAYI...", "GSHMAS..."],            # two protein chains
+        ligands=[{"ccd": "ATP"}],                       # cofactor by PDB code
+        nucleic_acids=[{"type": "dna", "sequence": "ATGCATGC"}],
+    )
 ```
 
 `cluster="della"` resolves to a maintainer-installed shared directory (see `CLUSTER_REGISTRY`). For a custom path use `root="/path/to/scion"` instead of `cluster=...`. Swapping `model="boltz"` to `model="esmfold"` will swap the underlying fold model with no other code changes once those envs are added.

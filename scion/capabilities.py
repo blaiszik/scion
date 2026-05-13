@@ -34,24 +34,31 @@ CAPABILITIES: tuple[str, ...] = (
 
 @dataclass
 class FoldResult:
-    """Output of a ``fold`` call."""
+    """
+    Output of a ``fold`` call.
+
+    ``affinity`` is populated when the provider was asked to run a binding-
+    affinity head alongside structure prediction (e.g. Boltz-2 with a ligand
+    + ``predict_affinity=True``). Typical fields: ``kd``, ``log_kd``,
+    ``binding_probability``, plus model-specific variants. ``None`` when
+    affinity wasn't requested or the model doesn't support it.
+    """
 
     mmcif: str
     confidence: dict[str, Any] = field(default_factory=dict)
     plddt: np.ndarray | None = None
+    affinity: dict[str, Any] | None = None
     extras: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> FoldResult:
+        reserved = {"mmcif", "confidence", "plddt", "affinity"}
         return cls(
             mmcif=data.get("mmcif", ""),
             confidence=data.get("confidence", {}) or {},
             plddt=data.get("plddt"),
-            extras={
-                k: v
-                for k, v in data.items()
-                if k not in {"mmcif", "confidence", "plddt"}
-            },
+            affinity=data.get("affinity"),
+            extras={k: v for k, v in data.items() if k not in reserved},
         )
 
 
