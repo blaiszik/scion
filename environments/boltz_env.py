@@ -8,8 +8,12 @@
 #     # construction (NVIDIA's CUDA equivariance kernels) but `pip install
 #     # boltz` doesn't list it as a hard dependency, so we have to pin it
 #     # explicitly. Required even when running on CPU — the import happens
-#     # before the device check.
+#     # before the device check. NVIDIA splits this into a Python bindings
+#     # package (cuequivariance-torch) and a CUDA-version-specific kernel
+#     # package (cuequivariance-ops-torch-cuN). Polaris is CUDA 12; on a
+#     # CUDA 11 cluster, swap the suffix to -cu11.
 #     "cuequivariance-torch",
+#     "cuequivariance-ops-torch-cu12",
 # ]
 # ///
 """
