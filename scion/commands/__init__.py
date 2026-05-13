@@ -8,6 +8,7 @@ from .preload import cmd_preload
 from .resolve import cmd_resolve
 from .serve import cmd_serve
 from .status import cmd_list, cmd_status
+from .sync import cmd_sync
 
 __all__ = [
     "cmd_check",
@@ -19,4 +20,5 @@ __all__ = [
     "cmd_resolve",
     "cmd_serve",
     "cmd_status",
+    "cmd_sync",
 ]

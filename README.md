@@ -130,6 +130,9 @@ scion init                                    # interactive setup of config + di
 scion install environments/esm2_env.py        # build an env from a file
 scion install environments/                   # build every *.py env in a directory
 scion install esm2_env --force                # rebuild a registered env
+scion sync environments/boltz_env.py          # refresh env_source.py in the worker venv
+                                              #   without rebuilding (fast path for env-only edits)
+scion sync                                    # refresh env_source.py across every built env
 scion status                                  # show envs, capabilities, cache sizes
 scion list                                    # list registered envs
 scion check boltz_env --device cpu            # diagnose a built env (calls setup() directly)

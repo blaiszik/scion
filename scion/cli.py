@@ -37,6 +37,7 @@ from .commands import (
     cmd_resolve,
     cmd_serve,
     cmd_status,
+    cmd_sync,
 )
 from .commands.common import SCION_ROOT_ENV
 from .config import DEFAULT_CONFIG_FILE
@@ -78,6 +79,36 @@ def main():
                                 help="Update registration and/or rebuild if exists")
     install_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     install_parser.set_defaults(func=cmd_install)
+
+    # sync — refresh env_source.py inside built venvs without rebuilding them
+    sync_parser = subparsers.add_parser(
+        "sync",
+        help="Refresh env_source.py in worker venvs (no rebuild)",
+        description=(
+            "Fast alternative to `scion install --force` when only the env "
+            "source file has changed (deps haven't). Three modes: file path "
+            "(registers + syncs), env name (syncs registered source into "
+            "worker venv), or no argument (syncs every registered env)."
+        ),
+    )
+    sync_parser.add_argument(
+        "source",
+        nargs="?",
+        default=None,
+        help="File path, env name, or omit to sync all envs",
+    )
+    sync_parser.add_argument(
+        "--root",
+        default=os.environ.get(SCION_ROOT_ENV),
+        help=f"Root directory (default: ${SCION_ROOT_ENV})",
+    )
+    sync_parser.add_argument(
+        "--with-scion",
+        action="store_true",
+        help="Also reinstall scion into the worker venv (slow; needed only if "
+             "worker-side scion code has changed, not just env source).",
+    )
+    sync_parser.set_defaults(func=cmd_sync)
 
     # status
     status_parser = subparsers.add_parser(
