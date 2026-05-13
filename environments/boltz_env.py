@@ -244,8 +244,21 @@ def setup(model: str, device: str = "cuda"):
                 )
                 input_yaml.write_text(yaml_text)
 
+                # Boltz exposes its CLI as a console_scripts entry point,
+                # not as a runnable module — so `python -m boltz` fails with
+                # "is a package and cannot be directly executed." Use the
+                # `boltz` binary that pip installed alongside python in the
+                # same venv.
+                boltz_bin = Path(sys.executable).parent / "boltz"
+                if not boltz_bin.exists():
+                    raise RuntimeError(
+                        f"boltz binary not found at {boltz_bin}. "
+                        f"Worker venv may be incomplete — rebuild with "
+                        f"`scion install boltz_env.py --force`."
+                    )
+
                 cmd = [
-                    sys.executable, "-m", "boltz", "predict",
+                    str(boltz_bin), "predict",
                     str(input_yaml),
                     "--out_dir", str(out_dir),
                     "--cache", str(self.cache),
