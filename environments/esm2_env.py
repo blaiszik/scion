@@ -2,15 +2,12 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #     "fair-esm>=2.0",
-#     "torch>=2.0",
+#     # torch>=2.9 ships PyPI wheels built against CUDA 12.9, which fails at
+#     # runtime on clusters whose NVIDIA driver caps at 12.8 (Polaris).
+#     # Cap at <2.9 so PyPI's default wheel (CUDA 12.6 or 12.8 build) works.
+#     "torch>=2.6,<2.9",
 #     "numpy>=1.24",
 # ]
-#
-# [tool.uv]
-# # Polaris's NVIDIA driver caps at CUDA 12.8; modern torch wheels on PyPI
-# # require 12.9+ and fail at runtime with "NVIDIA driver too old".
-# # Pull torch from PyTorch's CUDA 12.6 wheel index instead.
-# extra-index-url = ["https://download.pytorch.org/whl/cu126"]
 # ///
 """
 ESM2 environment for Scion.

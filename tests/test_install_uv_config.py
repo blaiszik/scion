@@ -41,20 +41,27 @@ def test_tool_uv_block_parses_cleanly(tmp_path: Path):
     assert uv.get("find-links") == ["https://example.invalid/wheels"]
 
 
-def test_shipped_env_files_pin_cuda_torch_index():
+def test_shipped_env_files_cap_torch_version_for_hpc_drivers():
     """
-    Both shipped env files (esm2_env, boltz_env) must declare a torch-
-    compatible extra-index-url. Pinned because we already debugged the
-    "modern torch wheel needs newer CUDA driver than Polaris has" failure
-    mode the hard way — losing this would silently regress it.
+    Both shipped env files (esm2_env, boltz_env) must cap torch below 2.9.
+
+    PyPI's torch>=2.9 wheels are built against CUDA 12.9, which fails at
+    runtime on Polaris (driver 12.8) with "NVIDIA driver too old". Took a
+    full GPU-job triage cycle to surface — regression guard for the cap.
+
+    Note: we don't use an extra-index-url to force a specific CUDA wheel
+    because uv's default `first-index` strategy still resolves torch from
+    PyPI when both PyPI and a PyTorch index list it. A version cap is the
+    only mechanism that reliably constrains which wheel uv selects.
     """
     here = Path(__file__).resolve().parent.parent / "environments"
     for env_file in ("esm2_env.py", "boltz_env.py"):
         meta = parse_pep723_metadata((here / env_file).read_text())
         assert meta is not None, env_file
-        urls = meta.get("tool", {}).get("uv", {}).get("extra-index-url", [])
-        assert any("pytorch.org" in u for u in urls), (
-            f"{env_file} is missing a pytorch.org extra-index-url; "
-            f"that pin keeps the worker venv compatible with HPC NVIDIA "
-            f"drivers that lag behind the latest torch wheels on PyPI."
+        deps = meta.get("dependencies", [])
+        torch_spec = next((d for d in deps if d.startswith("torch")), None)
+        assert torch_spec is not None, f"{env_file} missing torch dep"
+        assert "<2.9" in torch_spec or "<= 2.8" in torch_spec, (
+            f"{env_file}'s torch pin {torch_spec!r} is missing the <2.9 "
+            f"cap that keeps PyPI wheels compatible with HPC NVIDIA drivers."
         )
