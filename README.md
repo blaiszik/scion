@@ -8,7 +8,7 @@ Scion is the protein sibling of [Rootstock](https://github.com/Garden-AI/rootsto
 
 Scion is **early-stage software**. The v0 skeleton ships:
 
-- **`fold`** capability — sequence → structure. `boltz_env` reference file is contract-only (raises `NotImplementedError` where `boltz.main.predict` should be called); `esmfold_env` and `chai_env` are planned.
+- **`fold`** capability — sequence → structure. `boltz_env` is **wired** (invokes the Boltz CLI in-process from the worker venv; returns mmCIF + confidence JSON); `esmfold_env` and `chai_env` are planned.
 - **`embed`** capability — sequence → embeddings. `esm2_env` is **fully wired** against `fair-esm` (per-residue + mean-pooled per-sequence, optional contacts). `esmc_env` is planned.
 
 Planned capabilities: `design_sequence` (ProteinMPNN, LigandMPNN), `generate` (RFDiffusion, Chroma), `dock` (DiffDock, NeuralPLexer), `score` (ThermoMPNN, AF-Multimer iptm). The wire protocol is method-name-dispatched, so adding one is a new env file + a new client class.
@@ -24,11 +24,12 @@ with Embedder(cluster="della", model="esm2", checkpoint="esm2_t33_650M_UR50D") a
     print(result.per_residue.shape)   # (1, 22, 1280)
     print(result.per_sequence.shape)  # (1, 1280)
 
-# Fold (boltz_env contract; provider call is the v0 TODO)
-with Folder(cluster="della", model="boltz", checkpoint="boltz2", device="cuda") as folder:
+# Fold via Boltz-2 (writes input YAML, invokes the Boltz CLI in-process,
+# parses the resulting mmCIF + confidence JSON).
+with Folder(cluster="polaris", model="boltz", checkpoint="boltz2", device="cuda") as folder:
     result = folder.fold("MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ")
     print(result.mmcif[:200])
-    print(result.confidence["plddt_mean"])
+    print(result.confidence)            # e.g. {"confidence_score": 0.83, "ptm": 0.45, ...}
 ```
 
 `cluster="della"` resolves to a maintainer-installed shared directory (see `CLUSTER_REGISTRY`). For a custom path use `root="/path/to/scion"` instead of `cluster=...`. Swapping `model="boltz"` to `model="esmfold"` will swap the underlying fold model with no other code changes once those envs are added.
@@ -97,7 +98,7 @@ provider.embed(
 
 | Capability | Model | Environment | Default checkpoint | v0 status |
 |------------|-------|-------------|--------------------|-----------|
-| fold | `boltz` | `boltz_env` | `boltz2` | contract-only (raises `NotImplementedError`) |
+| fold | `boltz` | `boltz_env` | `boltz2` | wired (subprocess to Boltz CLI; reloads weights per call) |
 | fold | `esmfold` | `esmfold_env` | `esmfold_v1` | planned |
 | fold | `chai` | `chai_env` | `chai1` | planned |
 | embed | `esm2` | `esm2_env` | `esm2_t33_650M_UR50D` | wired |
