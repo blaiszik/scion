@@ -132,6 +132,13 @@ def _install_single_environment(
     requires_python = metadata.get("requires-python", ">=3.10")
     uv_config = metadata.get("tool", {}).get("uv", {})
     find_links = uv_config.get("find-links", [])
+    # extra-index-url: common case is pinning torch to CUDA-specific wheels
+    # for clusters whose NVIDIA driver is older than the latest torch CUDA
+    # build (e.g. Polaris driver caps at 12.8; modern torch wheels on PyPI
+    # require 12.9+).
+    extra_index_urls = uv_config.get("extra-index-url", [])
+    if isinstance(extra_index_urls, str):
+        extra_index_urls = [extra_index_urls]
 
     try:
         python_version = extract_minimum_python_version(requires_python)
@@ -143,6 +150,8 @@ def _install_single_environment(
     print(f"  Dependencies: {dependencies}")
     if find_links:
         print(f"  Find-links: {find_links}")
+    if extra_index_urls:
+        print(f"  Extra index URLs: {extra_index_urls}")
 
     home_dir = root / "home"
     home_dir.mkdir(parents=True, exist_ok=True)
@@ -197,6 +206,8 @@ def _install_single_environment(
         pip_cmd = ["uv", "pip", "install", "--python", str(env_python)]
         for link in find_links:
             pip_cmd.extend(["--find-links", link])
+        for url in extra_index_urls:
+            pip_cmd.extend(["--extra-index-url", url])
         pip_cmd.extend(dependencies)
 
         result = subprocess.run(

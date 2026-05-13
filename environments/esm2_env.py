@@ -5,6 +5,12 @@
 #     "torch>=2.0",
 #     "numpy>=1.24",
 # ]
+#
+# [tool.uv]
+# # Polaris's NVIDIA driver caps at CUDA 12.8; modern torch wheels on PyPI
+# # require 12.9+ and fail at runtime with "NVIDIA driver too old".
+# # Pull torch from PyTorch's CUDA 12.6 wheel index instead.
+# extra-index-url = ["https://download.pytorch.org/whl/cu126"]
 # ///
 """
 ESM2 environment for Scion.
