@@ -1,0 +1,32 @@
+# Scion examples
+
+Runnable smoke tests. Each script is self-contained — `pip install scion`
+and a built env on a cluster are the only prerequisites.
+
+| Script | What it does | When to run it |
+|---|---|---|
+| `fold_basic.py` | Boltz monomer fold of a short sequence; writes mmCIF + confidence JSON. | First thing after `scion install boltz_env.py` succeeds. Validates that the fold path works end-to-end. |
+| `fold_drug_discovery.py` | Protein + ligand (SMILES or CCD) co-fold with binding-affinity prediction. | After `fold_basic.py` succeeds. The flagship drug-discovery workflow. |
+
+## Quick start
+
+On a GPU node with a Scion cluster registered:
+
+```bash
+# Basic monomer fold (Trp-cage by default, ~20 residues, fast)
+python examples/fold_basic.py --cluster polaris
+
+# Drug-discovery flagship: CA2 + aspirin + affinity
+python examples/fold_drug_discovery.py --cluster polaris
+
+# Custom inputs
+python examples/fold_drug_discovery.py \
+    --sequence MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ \
+    --smiles 'CC(=O)Oc1ccccc1C(=O)O' \
+    --out ./my_complex
+```
+
+Both scripts use `cluster="polaris"` by default; pass `--root <path>` to
+override, or `--device cpu` to test (slowly) without a GPU.
+
+Output goes to `./out/` (basic) or `./out_complex/` (drug discovery).
