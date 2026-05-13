@@ -13,6 +13,83 @@ Scion is **early-stage software**. The v0 skeleton ships:
 
 Next on the drug-discovery roadmap: `dock` (DiffDock-L, NeuralPLexer) for fast virtual screening; `design_sequence` (LigandMPNN) for ligand-aware inverse folding / binder optimization. `esmfold_env` and `chai_env` are deferred — Boltz-2 covers the same ground with strictly more capabilities. The wire protocol is method-name-dispatched, so adding a new capability is a new env file + a new client class.
 
+## Showcase
+
+Three workflows that Scion makes one-screen-of-code, and that would take a week of conda-wrangling without it.
+
+### 1. Single-call drug discovery
+
+Co-fold a target with a candidate ligand and request the Boltz-2 affinity head in the same call. No separate docking program, no separate scoring step, no separate environment.
+
+```python
+from scion import Folder
+
+with Folder(cluster="polaris", model="boltz", device="cuda") as f:
+    r = f.fold(
+        sequence=ABL1_KINASE_DOMAIN,
+        ligands=[{"smiles": "Cc1ccc(NC(=O)c2ccc(CN3CCN(C)CC3)cc2)cc1Nc1nccc(-c2cccnc2)n1"}],
+        predict_affinity=True,
+    )
+    print(f"log Kd:              {r.affinity['log_kd']:+.2f}")
+    print(f"binding probability: {r.affinity['binding_probability']:.3f}")
+    print(f"complex pLDDT:       {r.confidence['complex_plddt']:.1f}")
+    open("imatinib_complex.cif", "w").write(r.mmcif)
+```
+
+### 2. Two models with conflicting Python envs in one script
+
+ESM2 needs `fair-esm` and one torch build; Boltz-2 needs `cuequivariance` and NVIDIA's CUDA-ops packages on a different torch build. Pip can't install both in one env. Scion gives each its own pre-built venv and brokers calls over a Unix socket — from the user's perspective, they're two context managers in the same file. Compose them freely:
+
+```python
+import numpy as np, pandas as pd
+from scion import Embedder, Folder
+
+# Embed a homolog family, pick the most divergent candidates
+with Embedder(cluster="polaris", model="esm2", device="cuda") as e:
+    embs = e.embed([TARGET] + HOMOLOG_LIBRARY)
+    cos = embs.per_sequence @ embs.per_sequence[0]
+    cos /= np.linalg.norm(embs.per_sequence, axis=1) * np.linalg.norm(embs.per_sequence[0])
+    diverse_idx = cos[1:].argsort()[:20]
+
+# Fold each with the same ligand, rank by predicted affinity
+with Folder(cluster="polaris", model="boltz", device="cuda") as f:
+    rows = []
+    for i in diverse_idx:
+        r = f.fold(sequence=HOMOLOG_LIBRARY[i],
+                   ligands=[{"smiles": LIGAND_SMILES}],
+                   predict_affinity=True)
+        rows.append({"homolog": i, "log_kd": r.affinity["log_kd"],
+                     "iptm": r.confidence.get("iptm", 0.0)})
+
+print(pd.DataFrame(rows).sort_values("log_kd"))
+```
+
+### 3. Virtual screen a ligand library against one target
+
+Boltz weights stay resident across the loop — one subprocess, one model load, per-ligand cost is just inference. No env activate/deactivate, no per-call spin-up, no docking-software babysitting.
+
+```python
+import pandas as pd
+from pathlib import Path
+from scion import Folder
+
+library = pd.read_csv("ligand_library.csv")    # columns: name, smiles
+poses_dir = Path("./poses"); poses_dir.mkdir(exist_ok=True)
+
+with Folder(cluster="polaris", model="boltz", device="cuda") as f:
+    rows = []
+    for name, smiles in library.itertuples(index=False):
+        r = f.fold(sequence=TARGET, ligands=[{"smiles": smiles}],
+                   predict_affinity=True)
+        rows.append({"ligand": name,
+                     "log_kd": r.affinity["log_kd"],
+                     "p_bind": r.affinity["binding_probability"],
+                     "iptm":   r.confidence.get("iptm", 0.0)})
+        (poses_dir / f"{name}.cif").write_text(r.mmcif)
+
+pd.DataFrame(rows).sort_values("log_kd").to_csv("screen_results.csv", index=False)
+```
+
 ## Quick start
 
 ```python
@@ -184,6 +261,20 @@ pytest tests/
 ```
 
 The protocol round-trip tests (4 cases) verify framing, named blob attachment, numpy-array blob payloads, and large header round-trips. They run without GPU.
+
+## Lessons from the field
+
+Bringing Boltz-2 up on Polaris surfaced five distinct dep/build paper cuts. Each had a clean structural fix; together they shape how new envs should be authored. Pinning them here so future env work avoids the same potholes.
+
+| Paper cut | What surfaced | Structural fix |
+|---|---|---|
+| `libgomp: Thread creation failed` on a login node | Shared HPC login nodes apply tight `RLIMIT_NPROC`; torch/MKL/OpenBLAS spin up one thread per CPU core and the kernel says no. | Per-cluster `cluster.toml` with `[login_env] OMP_NUM_THREADS=1` (see `cluster.toml.example`). `scion check` also applies the cap as a diagnostic fallback. |
+| `ModuleNotFoundError: cuequivariance_torch` during the first fold | Boltz imports `cuequivariance_torch` during model graph construction, *after* `import boltz` succeeds. The dep isn't in Boltz's pip metadata. | Declare it explicitly in the env file's PEP 723 deps. Don't trust upstream's transitive resolution for ML libraries. |
+| `ModuleNotFoundError: cuequivariance_ops_torch` after the previous fix | NVIDIA splits cuequivariance into bindings (`cuequivariance-torch`) and CUDA-version-specific kernels (`cuequivariance-ops-torch-cu12`). The bindings import the kernels unconditionally. | Pin both packages explicitly. CUDA-suffixed packages need a cluster-appropriate suffix (`-cu12` for modern A100/H100, `-cu11` for older clusters). |
+| `RuntimeError: NVIDIA driver too old (found version 12080)` | `pip install torch>=2.0` resolves to torch 2.9+ which is built against CUDA 12.9. Polaris's driver caps at 12.8. | Cap torch at `<2.9` in the env file. `[tool.uv] extra-index-url` is **not** sufficient — uv's default `first-index` strategy still prefers PyPI when both list `torch`. Version-pinning is the only mechanism that reliably constrains wheel selection. |
+| `undefined symbol: ncclGetLsaMultimemDevicePointer` after surgical `--no-deps` reinstall | Replacing torch alone left an incompatible `nvidia-nccl-cu12` resident. Torch and NVIDIA libs have tight ABI coupling. | Don't use `--no-deps` for torch surgery — let uv resolve the matched NVIDIA libs. For env-level fixes, prefer `scion install --force` over per-package patches once the env file is correct. |
+
+**Meta-lesson:** ML library dependency declarations don't reliably express what's needed to *run*. The default `scion check` only catches import-level breakage, but most of these surfaced during model construction (after `import` returned, before the first real call). That's why `provider.preload()` and `scion check --thorough` exist — they shift discovery from "after a GPU job's queue time" to "in 30 seconds on a login node." **Every new env should implement `provider.preload()`** so users can validate it before burning allocation.
 
 ## Relationship to Rootstock
 
