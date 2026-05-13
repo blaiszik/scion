@@ -9,10 +9,17 @@ so failures can be attributed cleanly to:
   * the provider's setup() body (import errors, init bugs)
 rather than blamed on the protocol / spawn / socket layer.
 
+By default ``scion check`` only runs ``setup()`` — fast (seconds) and
+catches import-level breakage but misses problems that surface later,
+e.g. NVIDIA cuequivariance ops that Boltz imports during model graph
+construction, not during ``import boltz``. Pass ``--thorough`` to also
+call ``provider.preload()`` if defined, which exercises the inference
+path and surfaces those deeper bugs.
+
 Examples
 --------
-    scion check esm2_env
-    scion check esm2_env --model esm2_t33_650M_UR50D --device cpu
+    scion check esm2_env                           # fast: setup() only
+    scion check boltz_env --device cpu --thorough  # also run provider.preload()
     scion check esm2_env --model esm2_t33_650M_UR50D --device cuda
 
 Exit codes match the subprocess: 0 on success, nonzero on failure.
@@ -64,7 +71,7 @@ def cmd_check(args) -> int:
     for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
         env.setdefault(var, "1")
 
-    script = textwrap.dedent(
+    base_script = textwrap.dedent(
         f"""\
         import sys, traceback
         sys.path.insert(0, {str(env_dir)!r})
@@ -92,6 +99,39 @@ def cmd_check(args) -> int:
             )
         """
     )
+
+    # --thorough: exercise the inference path by calling provider.preload()
+    # if the env defines it. Surfaces errors that only happen during model
+    # construction or a real call — e.g. missing CUDA kernel packages that
+    # import-time setup() wouldn't reveal. If the env doesn't define
+    # preload(), we say so but don't fail the check; env authors can add
+    # one to enable deeper diagnostics.
+    thorough_script = textwrap.dedent(
+        """\
+        if hasattr(provider, "preload"):
+            print(
+                "[check] --thorough: calling provider.preload() to exercise "
+                "the inference path ...",
+                flush=True,
+            )
+            try:
+                provider.preload()
+            except Exception as e:
+                traceback.print_exc()
+                sys.exit(f"[check] provider.preload() raised: {e!r}")
+            print("[check] --thorough: provider.preload() OK", flush=True)
+        else:
+            print(
+                "[check] --thorough: env has no provider.preload(); thorough "
+                "mode can only run setup(). Add a preload() method to your "
+                "env's provider to enable deeper diagnostic coverage (e.g. a "
+                "minimal capability call that exercises model construction).",
+                flush=True,
+            )
+        """
+    )
+
+    script = base_script + ("\n" + thorough_script if args.thorough else "")
 
     print(f"Checking env: {env_name}")
     print(f"  Python:     {env_python}")

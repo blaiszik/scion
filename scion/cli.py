@@ -157,6 +157,13 @@ def main():
         default=os.environ.get(SCION_ROOT_ENV),
         help=f"Root directory (default: ${SCION_ROOT_ENV})",
     )
+    check_parser.add_argument(
+        "--thorough",
+        action="store_true",
+        help="Also call provider.preload() to exercise the inference path. "
+             "Catches errors that surface during model construction (e.g. "
+             "missing CUDA kernel packages) rather than only at import time.",
+    )
     check_parser.set_defaults(func=cmd_check)
 
     # preload
