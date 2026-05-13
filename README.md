@@ -132,7 +132,10 @@ scion install environments/                   # build every *.py env in a direct
 scion install esm2_env --force                # rebuild a registered env
 scion status                                  # show envs, capabilities, cache sizes
 scion list                                    # list registered envs
-scion resolve --cluster della                 # look up a cluster's root path
+scion check boltz_env --device cpu            # diagnose a built env (calls setup() directly)
+scion preload boltz_env                       # pre-warm model cache on a login node before
+                                              #   submitting a GPU job (calls provider.preload())
+scion resolve --cluster polaris               # look up a cluster's root path
 scion serve esm2 --socket /tmp/s --checkpoint esm2_t33_650M_UR50D --device cuda
 scion manifest show                           # dump installation manifest
 scion manifest push                           # push manifest to dashboard (maintainer only)

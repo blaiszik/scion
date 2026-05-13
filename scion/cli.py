@@ -33,6 +33,7 @@ from .commands import (
     cmd_install,
     cmd_list,
     cmd_manifest,
+    cmd_preload,
     cmd_resolve,
     cmd_serve,
     cmd_status,
@@ -126,6 +127,38 @@ def main():
         help=f"Root directory (default: ${SCION_ROOT_ENV})",
     )
     check_parser.set_defaults(func=cmd_check)
+
+    # preload
+    preload_parser = subparsers.add_parser(
+        "preload",
+        help="Pre-warm an env's model/data cache (download weights on a login node)",
+        description=(
+            "Run the env's setup(model, device) and then provider.preload() "
+            "if defined, so weight downloads happen on a login node with "
+            "internet access rather than inside a GPU job. For envs whose "
+            "setup() already pulls weights (e.g. esm2_env) this is effectively "
+            "the same as `scion check`; for envs whose setup() only imports "
+            "the library (e.g. boltz_env), provider.preload() runs a minimal "
+            "real call to trigger the download."
+        ),
+    )
+    preload_parser.add_argument("env_name", help="Environment name (e.g., boltz_env)")
+    preload_parser.add_argument(
+        "--model",
+        default=None,
+        help="Checkpoint name to pass to setup() (default: env's own default)",
+    )
+    preload_parser.add_argument(
+        "--device",
+        default="cpu",
+        help="Device passed to setup() (default: cpu — safest for login nodes)",
+    )
+    preload_parser.add_argument(
+        "--root",
+        default=os.environ.get(SCION_ROOT_ENV),
+        help=f"Root directory (default: ${SCION_ROOT_ENV})",
+    )
+    preload_parser.set_defaults(func=cmd_preload)
 
     # serve
     serve_parser = subparsers.add_parser(

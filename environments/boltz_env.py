@@ -202,6 +202,19 @@ def setup(model: str, device: str = "cuda"):
             self.accelerator = accelerator
             self.cache = boltz_cache
 
+        def preload(self) -> None:
+            """
+            Warm Boltz's weight cache.
+
+            Called by ``scion preload``. The cheapest invocation that
+            pulls weights is a real prediction (Boltz's CLI has no
+            download-only flag), so this runs a 4-residue stub with the
+            minimum number of recycling steps. Expect a few minutes on
+            CPU and ~30s on GPU. After this returns, subsequent fold()
+            calls don't need network access.
+            """
+            self.fold("MKTA", num_recycles=1)
+
         def fold(
             self,
             sequence,
