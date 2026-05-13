@@ -4,6 +4,12 @@
 #     "boltz>=2.0",
 #     "torch>=2.2,<2.10",
 #     "numpy>=1.24",
+#     # Boltz-2 imports cuequivariance_torch unconditionally during model
+#     # construction (NVIDIA's CUDA equivariance kernels) but `pip install
+#     # boltz` doesn't list it as a hard dependency, so we have to pin it
+#     # explicitly. Required even when running on CPU — the import happens
+#     # before the device check.
+#     "cuequivariance-torch",
 # ]
 # ///
 """
