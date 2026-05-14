@@ -73,7 +73,10 @@ else
     source "$CLI_VENV/bin/activate"
 fi
 
-python -c "import scion; print(f'scion {scion.__version__} from {scion.__file__}')"
+# Print the active interpreter / scion version. -P (Python 3.11+)
+# keeps CWD off sys.path[0] so the repo source tree doesn't shadow the
+# installed package and report a misleading import path.
+python -P -c "import scion; print(f'scion {scion.__version__} from {scion.__file__}')"
 
 if [ -z "${SCION_ROOT:-}" ]; then
     echo "Error: SCION_ROOT not forwarded to the job." >&2
@@ -81,4 +84,22 @@ if [ -z "${SCION_ROOT:-}" ]; then
     exit 1
 fi
 
-python "$PBS_O_WORKDIR/demo_fold.py"
+# Locate demo_fold.py. PBS doesn't preserve the script's source path
+# (the spooled copy lives somewhere temporary), so probe the common
+# locations relative to $PBS_O_WORKDIR — covers both "ran qsub from
+# the repo root" and "ran qsub from scripts/polaris/".
+DEMO=""
+for cand in \
+    "$PBS_O_WORKDIR/demo_fold.py" \
+    "$PBS_O_WORKDIR/scripts/polaris/demo_fold.py"; do
+    if [ -f "$cand" ]; then DEMO="$cand"; break; fi
+done
+if [ -z "$DEMO" ]; then
+    echo "Error: could not find demo_fold.py near $PBS_O_WORKDIR" >&2
+    echo "  Submit from the repo root or from scripts/polaris/." >&2
+    exit 1
+fi
+
+# Output (polaris_demo.cif) lands in $PBS_O_WORKDIR — convenient for
+# `ls`-ing right next to the job's .o<jobid> file.
+python "$DEMO"
