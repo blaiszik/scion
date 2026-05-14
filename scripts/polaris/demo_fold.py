@@ -58,7 +58,10 @@ print("Fold complete.")
 print(f"  mmCIF:               {out_cif}  ({out_cif.stat().st_size} bytes)")
 print(f"  confidence_score:    {fmt('confidence_score')}")
 print(f"  pTM:                 {fmt('ptm')}")
-print(f"  iPTM:                {fmt('iptm')}")
+print(f"  iPTM:                {fmt('iptm')}  (0 is expected for monomers)")
 print(f"  complex_plddt:       {fmt('complex_plddt')}")
 print()
-print("If complex_plddt is > 70 you have a successful end-to-end install.")
+# Boltz-2 reports confidence on a 0-1 scale (not 0-100 like AlphaFold's
+# raw pLDDT). 0.7 corresponds to "AlphaFold pLDDT ~70" — a reasonable
+# floor for a well-folded small domain.
+print("If complex_plddt is > 0.7 you have a successful end-to-end install.")

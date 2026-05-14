@@ -100,14 +100,16 @@ Expected output ends with something like:
 
 ```
 Fold complete.
-  mmCIF:               /lus/.../polaris_demo.cif  (12345 bytes)
-  confidence_score:    0.842
-  pTM:                 0.612
-  iPTM:                n/a
-  complex_plddt:       82.4
+  mmCIF:               /home/.../polaris_demo.cif  (23471 bytes)
+  confidence_score:    0.873
+  pTM:                 0.641
+  iPTM:                0.000  (0 is expected for monomers)
+  complex_plddt:       0.931
 
-If complex_plddt is > 70 you have a successful end-to-end install.
+If complex_plddt is > 0.7 you have a successful end-to-end install.
 ```
+
+Boltz-2 reports confidence on a 0–1 scale, not the 0–100 scale AlphaFold uses for raw pLDDT.
 
 The `polaris_demo.cif` file is a real predicted structure you can open in PyMOL / ChimeraX.
 
