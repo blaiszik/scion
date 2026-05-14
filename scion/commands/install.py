@@ -461,6 +461,5 @@ def cmd_install(args) -> int:
         force=args.force,
         models=args.models,
         verbose=args.verbose,
-        skip_cuda_check=getattr(args, "skip_cuda_check", False),
         skip_preload=getattr(args, "no_preload", False),
     )
