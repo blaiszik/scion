@@ -8,6 +8,7 @@ and a built env on a cluster are the only prerequisites.
 | `embed_basic.py` | ESM2 per-residue and per-sequence embeddings for one or more sequences; saves as ``.npz``. | First thing after `scion install esm2_env.py` succeeds. Smallest model in Scion — fastest sanity check. |
 | `fold_basic.py` | Boltz monomer fold of a short sequence; writes mmCIF + confidence JSON. | First thing after `scion install boltz_env.py` succeeds. Validates that the fold path works end-to-end. |
 | `fold_drug_discovery.py` | Protein + ligand (SMILES or CCD) co-fold with binding-affinity prediction. | After `fold_basic.py` succeeds. The flagship drug-discovery workflow. |
+| `showcase.py` | Same drug-discovery call as above but stripped to the minimum (no CLI, no helpers). | Tweet-sized screenshot of what Scion does. |
 
 ## Quick start
 
