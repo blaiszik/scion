@@ -38,14 +38,17 @@ echo
 # 1. Module + Python
 # ---------------------------------------------------------------------------
 echo "[1/5] Loading conda module..."
-# `module` is a shell function; PBS login shells already source it. If
-# we're invoked under sh/bash without it, source the modules init.
+# `module` is a shell function; under non-login shells it may not be
+# initialized. /soft/modulefiles may also not be on MODULEPATH by
+# default depending on which Polaris node you land on. Source + use
+# defensively (both no-op if already set up).
 if ! type module >/dev/null 2>&1; then
     if [ -r /etc/profile.d/modules.sh ]; then
         # shellcheck disable=SC1091
         . /etc/profile.d/modules.sh
     fi
 fi
+module use /soft/modulefiles 2>/dev/null || true
 module load conda
 
 py_version=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')

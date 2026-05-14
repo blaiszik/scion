@@ -73,6 +73,14 @@ qsub -A <YOUR_PROJECT> -v SCION_ROOT scripts/polaris/submit_demo.sh
 
 `-v SCION_ROOT` forwards your current `$SCION_ROOT` into the job's environment. `-A` is required by Polaris's PBS.
 
+**Already have a conda env with scion installed?** Forward its name with `-v` and the job will `conda activate` it instead of the CLI venv `install.sh` created:
+
+```bash
+qsub -A <project> -v SCION_ROOT,SCION_CONDA_ENV=scion scripts/polaris/submit_demo.sh
+```
+
+**Submit to a different queue:** `qsub -q <queue>` overrides the `#PBS -q debug` line. Common Polaris queues: `debug` (≤2 nodes, 1 hr — fits this demo), `debug-scaling`, `prod`, `preemptable`, `demand`.
+
 The job script (`submit_demo.sh`) is a standard Polaris debug-queue PBS file: 1 node, 4 GPUs, 20 min walltime, joined stdout/stderr. It activates the same `~/.venvs/scion-cli` and runs `demo_fold.py`.
 
 Watch the queue:

@@ -9,6 +9,11 @@
 # environment (PBS does not inherit by default). `-A` is required by
 # qsub on Polaris and selects the project the allocation bills.
 #
+# By default this script activates the venv that install.sh created at
+# ~/.venvs/scion-cli. To use an existing conda env instead, forward its
+# name with -v:
+#   qsub -A <project> -v SCION_ROOT,SCION_CONDA_ENV=scion submit_demo.sh
+#
 #PBS -N scion_demo
 #PBS -l select=1:system=polaris
 #PBS -l place=scatter
@@ -22,20 +27,33 @@ set -euo pipefail
 cd "$PBS_O_WORKDIR"
 
 echo "=== job $PBS_JOBID on $(hostname) ==="
-nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
+nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv || true
 
-# Same environment the install.sh laid down.
+# `module` is a shell function; under PBS's default shell it may not be
+# initialized, and on compute nodes /soft/modulefiles may not be on the
+# default MODULEPATH. Source the modules init and `module use` defensively.
 if ! type module >/dev/null 2>&1; then
     if [ -r /etc/profile.d/modules.sh ]; then
         # shellcheck disable=SC1091
         . /etc/profile.d/modules.sh
     fi
 fi
+module use /soft/modulefiles 2>/dev/null || true
 module load conda
 
-CLI_VENV="${CLI_VENV:-$HOME/.venvs/scion-cli}"
-# shellcheck disable=SC1091
-source "$CLI_VENV/bin/activate"
+# Two ways to bring scion into scope:
+#   SCION_CONDA_ENV=<name>   -> conda activate <name>
+#   (default)                -> source ~/.venvs/scion-cli/bin/activate
+if [ -n "${SCION_CONDA_ENV:-}" ]; then
+    # shellcheck disable=SC1091
+    conda activate "$SCION_CONDA_ENV"
+else
+    CLI_VENV="${CLI_VENV:-$HOME/.venvs/scion-cli}"
+    # shellcheck disable=SC1091
+    source "$CLI_VENV/bin/activate"
+fi
+
+python -c "import scion; print(f'scion {scion.__version__} from {scion.__file__}')"
 
 if [ -z "${SCION_ROOT:-}" ]; then
     echo "Error: SCION_ROOT not forwarded to the job." >&2
