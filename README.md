@@ -212,6 +212,7 @@ scion sync environments/boltz_env.py          # refresh env_source.py in the wor
 scion sync                                    # refresh env_source.py across every built env
 scion status                                  # show envs, capabilities, cache sizes
 scion list                                    # list registered envs
+scion doctor                                  # check cluster/root/env readiness
 scion check boltz_env --device cpu            # diagnose a built env (calls setup() directly)
 scion preload boltz_env                       # pre-warm model cache on a login node before
                                               #   submitting a GPU job (calls provider.preload())
@@ -223,6 +224,23 @@ scion manifest push                           # push manifest to dashboard (main
 
 `--root` can be passed to any command, or set via `SCION_ROOT`, or stored in `~/.config/scion/config.toml`.
 
+## Cluster registry and profiles
+
+Scion ships built-in profiles for known systems (`della`, `sophia`, `polaris`) and overlays user/site profiles from `~/.config/scion/clusters.toml`. Set `SCION_CLUSTERS_FILE=/path/to/clusters.toml` to add another overlay without editing the default file.
+
+```toml
+[clusters.perlmutter]
+root = "/global/common/software/scion"
+scheduler = "slurm"
+job_env_vars = ["SLURM_JOB_ID"]
+hostname_patterns = ["perlmutter*", "*.nersc.gov"]
+gpu_arch = "a100"
+cuda_driver_max = "12.4"
+runtime_dir = "$SCRATCH/.scion/run"
+```
+
+Later layers replace earlier profiles with the same name, so a site maintainer can override the built-in root or scheduler metadata without changing user code. `cluster="current"` and `scion resolve --cluster current` use hostname patterns for best-effort auto-detection.
+
 ## Per-cluster environment overrides
 
 A `cluster.toml` placed at the install root (`{root}/cluster.toml`) lets the maintainer set environment variables Scion applies to every subprocess it spawns — worker startup, `scion check`, and the `scion install --models` prebuild. Three optional tables:
@@ -233,7 +251,9 @@ A `cluster.toml` placed at the install root (`{root}/cluster.toml`) lets the mai
 [compute_env]  # only inside a PBS/SLURM batch job
 ```
 
-Job detection looks at `PBS_JOBID` (Polaris) and `SLURM_JOB_ID` (Della, Perlmutter). See `cluster.toml.example` for a Polaris-ready starter that caps `OMP_NUM_THREADS=1` on login nodes (avoids the `libgomp: Thread creation failed` crash when loading large models on the shared login tier).
+Job detection defaults to `PBS_JOBID` (Polaris) and `SLURM_JOB_ID` (Della, Perlmutter), and cluster profiles can override the job env vars for other schedulers. See `cluster.toml.example` for a Polaris-ready starter that caps `OMP_NUM_THREADS=1` on login nodes (avoids the `libgomp: Thread creation failed` crash when loading large models on the shared login tier).
+
+`scion doctor` reports which profile and `cluster.toml` overlays are active, whether Scion can write to its cache/home directories, whether login-node thread caps are in place, whether `uv` is available for installs, whether GPUs are visible via `nvidia-smi`, and whether registered/built envs look complete. It is a lightweight preflight; use `scion check <env> --thorough` for model-specific inference-path validation.
 
 ## Setting up a new cluster
 
@@ -242,8 +262,10 @@ Maintainer flow:
 ```bash
 pip install scion
 scion init                                    # configure root + maintainer + (optional) API
+scion doctor                                  # validate root/profile/cluster.toml basics
 scion install environments/esm2_env.py        # builds an isolated venv under {root}/envs/
 scion install environments/boltz_env.py       # likewise for fold (once provider is wired)
+scion doctor --env boltz_env                  # confirm env layout and cache readiness
 scion status                                  # confirm
 ```
 

@@ -5,12 +5,17 @@
 # Scion picks it up automatically — worker spawn, `scion check`, and the
 # `--models` prebuild step all apply the matching overlay.
 #
+# This file is only for environment-variable overlays. Put root paths,
+# scheduler metadata, hostname patterns, and runtime-dir preferences in
+# ~/.config/scion/clusters.toml or the file pointed to by SCION_CLUSTERS_FILE.
+#
 # Three tables, all optional:
 #   [env]          always applied
 #   [login_env]    only when *not* inside a PBS/SLURM batch job
-#   [compute_env]  only when inside a PBS/SLURM batch job
+#   [compute_env]  only when inside a detected batch job
 #
-# Job detection: PBS_JOBID (PBS Pro: Polaris) or SLURM_JOB_ID (SLURM: Della, Perlmutter).
+# Job detection defaults to PBS_JOBID and SLURM_JOB_ID. Cluster profiles can
+# override job_env_vars for other schedulers.
 
 # ---------------------------------------------------------------------------
 # Polaris (ALCF) — login nodes apply tight RLIMIT_NPROC, so any of torch /

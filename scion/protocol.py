@@ -49,6 +49,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import tempfile
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -157,9 +158,10 @@ def recv_frame(sock: socket.socket) -> Frame:
 # Socket helpers (Unix domain only — single-node operation)
 # -----------------------------------------------------------------------------
 
-def create_unix_socket_path(name: str) -> str:
+def create_unix_socket_path(name: str, runtime_dir: str | None = None) -> str:
     """Create path for Unix domain socket."""
-    return f"/tmp/scion_{name}_{os.getpid()}"
+    base = runtime_dir or os.environ.get("SCION_RUNTIME_DIR") or tempfile.gettempdir()
+    return str(os.path.join(base, f"scion_{name}_{os.getpid()}"))
 
 
 def create_server_socket(socket_path: str, timeout: float | None = None) -> socket.socket:

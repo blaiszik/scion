@@ -1,6 +1,7 @@
 """Command modules for the Scion CLI."""
 
 from .check import cmd_check
+from .doctor import cmd_doctor
 from .init import cmd_init
 from .install import cmd_install
 from .manifest import cmd_manifest
@@ -12,6 +13,7 @@ from .sync import cmd_sync
 
 __all__ = [
     "cmd_check",
+    "cmd_doctor",
     "cmd_init",
     "cmd_install",
     "cmd_list",

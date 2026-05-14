@@ -20,6 +20,8 @@ from .clusters import (
     CLUSTER_REGISTRY,
     KNOWN_ENVIRONMENTS,
     get_cluster_for_root,
+    get_profile_for_root,
+    get_profile_for_root_or_host,
     get_root_for_cluster,
 )
 from .config import UserConfig, load_config, save_config
@@ -29,6 +31,12 @@ from .environment import (
     get_model_cache_env,
     list_built_environments,
     list_environments,
+)
+from .errors import (
+    ScionWorkerError,
+    WorkerMethodError,
+    WorkerProcessDied,
+    WorkerSetupFailed,
 )
 from .folder import Folder
 from .manifest import Manifest, load_manifest, save_manifest
@@ -48,6 +56,10 @@ __all__ = [
     "FoldResult",
     "EmbedResult",
     "CAPABILITIES",
+    "ScionWorkerError",
+    "WorkerSetupFailed",
+    "WorkerProcessDied",
+    "WorkerMethodError",
     "ScionSession",
     "ScionServer",
     "ScionClient",
@@ -67,6 +79,8 @@ __all__ = [
     "KNOWN_ENVIRONMENTS",
     "get_root_for_cluster",
     "get_cluster_for_root",
+    "get_profile_for_root",
+    "get_profile_for_root_or_host",
     "UserConfig",
     "load_config",
     "save_config",

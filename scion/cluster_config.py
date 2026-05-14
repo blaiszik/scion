@@ -7,10 +7,11 @@ environment variables to overlay onto every subprocess Scion spawns
 
   [env]          always applied
   [login_env]    applied only when *not* inside a batch job
-  [compute_env]  applied only when inside a PBS or SLURM batch job
+  [compute_env]  applied only when inside a detected batch job
 
-Job detection is by ``PBS_JOBID`` (PBS Pro: Polaris, ALCF) or
-``SLURM_JOB_ID`` (SLURM: Della, Perlmutter, most academic clusters).
+Job detection defaults to ``PBS_JOBID`` (PBS Pro: Polaris, ALCF) or
+``SLURM_JOB_ID`` (SLURM: Della, Perlmutter, most academic clusters), and
+can be refined by a layered cluster profile.
 
 Example ``cluster.toml`` for Polaris::
 
@@ -47,24 +48,31 @@ class ClusterConfig:
     login_env: dict[str, str] = field(default_factory=dict)
     compute_env: dict[str, str] = field(default_factory=dict)
 
-    def resolved_env(self, in_job: bool | None = None) -> dict[str, str]:
+    def resolved_env(
+        self,
+        in_job: bool | None = None,
+        job_env_vars: tuple[str, ...] | list[str] | None = None,
+    ) -> dict[str, str]:
         """
         Return the merged env dict appropriate for the current context.
 
-        ``in_job=None`` (default) auto-detects via PBS_JOBID / SLURM_JOB_ID.
-        Pass an explicit bool to force one branch (useful for tests).
+        ``in_job=None`` (default) auto-detects via scheduler job environment
+        variables. Pass an explicit bool to force one branch (useful for tests).
         """
         if in_job is None:
-            in_job = is_in_batch_job()
+            in_job = is_in_batch_job(job_env_vars=job_env_vars)
         merged: dict[str, str] = {}
         merged.update(self.env)
         merged.update(self.compute_env if in_job else self.login_env)
         return merged
 
 
-def is_in_batch_job() -> bool:
-    """True when invoked inside a PBS Pro or SLURM batch job."""
-    return bool(os.environ.get("PBS_JOBID") or os.environ.get("SLURM_JOB_ID"))
+def is_in_batch_job(job_env_vars: tuple[str, ...] | list[str] | None = None) -> bool:
+    """True when invoked inside a batch job."""
+    from .clusters import DEFAULT_JOB_ENV_VARS
+
+    names = tuple(job_env_vars or DEFAULT_JOB_ENV_VARS)
+    return any(bool(os.environ.get(name)) for name in names)
 
 
 def load_cluster_config(root: Path | str) -> ClusterConfig:
@@ -99,4 +107,8 @@ def load_cluster_config(root: Path | str) -> ClusterConfig:
 
 def get_cluster_env(root: Path | str, in_job: bool | None = None) -> dict[str, str]:
     """Convenience: load and resolve in one call. Empty dict if no config file."""
-    return load_cluster_config(root).resolved_env(in_job=in_job)
+    from .clusters import get_profile_for_root
+
+    profile = get_profile_for_root(root)
+    job_env_vars = profile.job_env_vars if profile else None
+    return load_cluster_config(root).resolved_env(in_job=in_job, job_env_vars=job_env_vars)

@@ -14,6 +14,7 @@ match each capability's contract.
 
 from __future__ import annotations
 
+import collections
 import itertools
 import os
 import socket
@@ -24,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from .clusters import get_root_for_cluster
+from .errors import WorkerMethodError, WorkerProcessDied, WorkerSetupFailed
 from .protocol import (
     Frame,
     SocketClosed,
@@ -32,6 +34,59 @@ from .protocol import (
     recv_frame,
     send_frame,
 )
+
+
+class _StderrBuffer:
+    """
+    Bounded ring buffer fed by a background reader thread.
+
+    When the session pipes worker stderr (no ``log`` file was provided),
+    we drain that pipe continuously so a chatty worker can't block on a
+    full kernel pipe buffer, and so the tail is available to attach to
+    any exception we raise.
+    """
+
+    def __init__(self, max_lines: int = 200):
+        self._lines: collections.deque[str] = collections.deque(maxlen=max_lines)
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._stream = None
+
+    def start(self, stream) -> None:
+        self._stream = stream
+        self._thread = threading.Thread(
+            target=self._run,
+            daemon=True,
+            name="scion-worker-stderr",
+        )
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            for line in iter(self._stream.readline, b""):
+                try:
+                    text = line.decode("utf-8", errors="replace")
+                except Exception:
+                    text = repr(line)
+                with self._lock:
+                    self._lines.append(text)
+        except (ValueError, OSError):
+            # Stream was closed mid-readline; normal at shutdown.
+            pass
+
+    def snapshot(self) -> str:
+        with self._lock:
+            return "".join(self._lines)
+
+    def stop(self, timeout: float = 1.0) -> None:
+        if self._stream is not None:
+            try:
+                self._stream.close()
+            except OSError:
+                pass
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=timeout)
+        self._stream = None
 
 
 class ScionSession:
@@ -64,9 +119,17 @@ class ScionSession:
         self.device = device
         self.timeout = timeout
         self.log = log
+        self._stderr_buffer = _StderrBuffer()
 
         self.socket_name = socket_name or f"{env_name}_{uuid.uuid4().hex[:8]}"
-        self.socket_path = create_unix_socket_path(self.socket_name)
+        runtime_dir = os.environ.get("SCION_RUNTIME_DIR")
+        if runtime_dir is None:
+            from .clusters import get_profile_for_root
+
+            profile = get_profile_for_root(self.root)
+            if profile is not None and profile.runtime_dir:
+                runtime_dir = str(Path(os.path.expandvars(profile.runtime_dir)).expanduser())
+        self.socket_path = create_unix_socket_path(self.socket_name, runtime_dir=runtime_dir)
 
         self._server_socket: socket.socket | None = None
         self._client_socket: socket.socket | None = None
@@ -126,6 +189,13 @@ class ScionSession:
             stderr=subprocess.PIPE if not self.log else None,
         )
 
+        # Drain worker stderr in a background thread so it can't deadlock on
+        # a full pipe and so the tail is available to attach to any
+        # exception we raise. Skip when the caller passed a log file —
+        # the worker is writing there directly.
+        if not self.log and self._process.stderr is not None:
+            self._stderr_buffer.start(self._process.stderr)
+
     def _accept_connection(self) -> None:
         self._server_socket.settimeout(1.0)
         while True:
@@ -134,20 +204,39 @@ class ScionSession:
                 break
             except TimeoutError:
                 if self._process.poll() is not None:
-                    stdout, stderr = self._process.communicate()
-                    raise RuntimeError(
-                        f"Worker died with code {self._process.returncode}.\n"
-                        f"stdout: {stdout}\nstderr: {stderr}"
+                    raise WorkerSetupFailed(
+                        f"Worker exited before connecting to {self.socket_path}",
+                        stderr=self._collect_stderr(),
+                        returncode=self._process.returncode,
                     )
 
         self._server_socket.settimeout(self.timeout)
         self._client_socket.settimeout(self.timeout)
 
+    def _collect_stderr(self) -> str:
+        """
+        Return everything currently buffered from worker stderr.
+
+        If the worker has exited, drain the pipe to EOF first so the last
+        traceback lines aren't missed.
+        """
+        if self._process is not None and self._process.poll() is not None:
+            self._stderr_buffer.stop(timeout=2.0)
+        return self._stderr_buffer.snapshot()
+
     def _receive_setup_done(self) -> None:
-        frame = recv_frame(self._client_socket)
+        try:
+            frame = recv_frame(self._client_socket)
+        except SocketClosed as e:
+            raise WorkerSetupFailed(
+                "Worker closed the socket before sending setup_done",
+                stderr=self._collect_stderr(),
+                returncode=self._process.poll() if self._process else None,
+            ) from e
         if frame.header.get("method") != "setup_done":
-            raise RuntimeError(
-                f"Expected setup_done frame, got method={frame.header.get('method')!r}"
+            raise WorkerSetupFailed(
+                f"Expected setup_done frame, got method={frame.header.get('method')!r}",
+                stderr=self._collect_stderr(),
             )
         self._capabilities = list(frame.header.get("args", {}).get("capabilities", []))
 
@@ -187,6 +276,10 @@ class ScionSession:
                 self._process.kill()
                 self._process.wait()
             self._process = None
+
+        # Stop the stderr reader after the process has exited so any final
+        # output is captured before the pipe closes.
+        self._stderr_buffer.stop(timeout=1.0)
 
         if os.path.exists(self.socket_path):
             os.unlink(self.socket_path)
@@ -245,15 +338,31 @@ class ScionSession:
                 "args": args,
                 "blobs": blob_specs,
             }
-            self._send(header, blobs)
-            reply = recv_frame(self._client_socket)
+            try:
+                self._send(header, blobs)
+                reply = recv_frame(self._client_socket)
+            except SocketClosed as e:
+                raise WorkerProcessDied(
+                    f"Worker socket closed during call to {method!r}",
+                    stderr=self._collect_stderr(),
+                    returncode=self._process.poll() if self._process else None,
+                ) from e
+            except (BrokenPipeError, ConnectionResetError, OSError) as e:
+                raise WorkerProcessDied(
+                    f"I/O error talking to worker during {method!r}: {e}",
+                    stderr=self._collect_stderr(),
+                    returncode=self._process.poll() if self._process else None,
+                ) from e
 
         if int(reply.header.get("id", -1)) != request_id:
             raise RuntimeError(
                 f"Reply id mismatch: expected {request_id}, got {reply.header.get('id')}"
             )
         if not reply.header.get("ok", False):
-            raise RuntimeError(reply.header.get("error") or "Unknown worker error")
+            raise WorkerMethodError(
+                reply.header.get("error") or "Unknown worker error",
+                stderr=self._stderr_buffer.snapshot(),
+            )
         return reply
 
     # --- context manager ------------------------------------------------

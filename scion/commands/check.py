@@ -34,12 +34,102 @@ import textwrap
 
 from .common import get_root_or_exit
 
+# Known failure-mode patterns and the structural fix for each. Keep these
+# tight: the goal is to save users a full triage cycle on the same paper
+# cuts the README documents in "Lessons from the field".
+HINT_PATTERNS: tuple[tuple[str, str], ...] = (
+    (
+        "undefined symbol: nccl",
+        "torch / nvidia-* ABI skew (often from a stray --no-deps reinstall). "
+        "Rebuild with: scion install <env> --force",
+    ),
+    (
+        "NVIDIA driver on your system is too old",
+        "torch wheel was built for a newer CUDA than this cluster's driver "
+        "supports. Cap torch in PEP 723 deps (e.g. 'torch<2.9' for clusters "
+        "stuck at CUDA 12.8), then rebuild with: scion install <env> --force",
+    ),
+    (
+        "ModuleNotFoundError: No module named 'cuequivariance",
+        "Boltz imports cuequivariance unconditionally but doesn't list it. "
+        "Add 'cuequivariance-torch' and 'cuequivariance-ops-torch-cu12' "
+        "(or -cu11 on older clusters) to PEP 723 deps and rebuild.",
+    ),
+    (
+        "libgomp: Thread creation failed",
+        "Shared HPC login nodes apply tight RLIMIT_NPROC. Set "
+        "OMP_NUM_THREADS=MKL_NUM_THREADS=OPENBLAS_NUM_THREADS=1 via "
+        "<root>/cluster.toml [login_env]. See cluster.toml.example.",
+    ),
+    (
+        "huggingface_hub.utils._errors.LocalEntryNotFoundError",
+        "HuggingFace Hub download failed — usually compute-node outbound "
+        "blocked. Run `scion preload <env>` from a login node first, or "
+        "set HTTPS_PROXY in <root>/cluster.toml [compute_env].",
+    ),
+    (
+        "ConnectionError",
+        "Network connection failed during model download. On most HPC "
+        "compute nodes outbound HTTP is blocked; run `scion preload <env>` "
+        "from a login node to populate the cache before the GPU job, or "
+        "configure HTTPS_PROXY in <root>/cluster.toml [compute_env].",
+    ),
+    (
+        "OSError: [Errno 28] No space left on device",
+        "Out of disk in cache or home. Check `du -sh <root>/cache "
+        "<root>/home` and either clear old weights or move the root to a "
+        "larger volume (project allocation, $SCRATCH).",
+    ),
+)
+
+
+def _suggest_hints(output: str) -> list[str]:
+    """Return one-line tips matching known patterns in the worker output."""
+    return [tip for needle, tip in HINT_PATTERNS if needle in output]
+
 
 def cmd_check(args) -> int:
+    """Diagnose one or all built environments."""
+    if getattr(args, "all_envs", False):
+        return _cmd_check_all(args)
+    if not args.env_name:
+        print(
+            "Error: env_name is required unless --all-envs is passed.",
+            file=sys.stderr,
+        )
+        return 1
+    return _check_single_env(args, env_name=args.env_name)
+
+
+def _cmd_check_all(args) -> int:
+    """Run check across every built env in series; one summary line per env."""
+    from ..environment import list_built_environments
+
+    root = get_root_or_exit(args)
+    envs = [name for name, _ in list_built_environments(root)]
+    if not envs:
+        print("No built environments found.", file=sys.stderr)
+        return 1
+
+    print(f"Checking {len(envs)} env(s): {', '.join(envs)}\n")
+    failed: list[str] = []
+    for name in envs:
+        print(f"{'=' * 60}\n{name}\n{'=' * 60}")
+        rc = _check_single_env(args, env_name=name)
+        if rc != 0:
+            failed.append(name)
+        print()
+
+    print(f"{'=' * 60}\nSummary: {len(envs) - len(failed)}/{len(envs)} OK")
+    if failed:
+        print(f"  Failed: {', '.join(failed)}")
+    return 1 if failed else 0
+
+
+def _check_single_env(args, env_name: str) -> int:
     from ..environment import EnvironmentManager, get_model_cache_env
 
     root = get_root_or_exit(args)
-    env_name = args.env_name
     model = args.model or ""
     device = args.device
 
@@ -146,9 +236,26 @@ def cmd_check(args) -> int:
           f"OPENBLAS={env.get('OPENBLAS_NUM_THREADS')}")
     print()
 
-    proc = subprocess.run([str(env_python), "-c", script], env=env)
+    proc = subprocess.run(
+        [str(env_python), "-c", script],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    # Preserve the prior behavior of streaming worker output to the user's
+    # terminal, then post-scan it for known failure-mode patterns.
+    if proc.stdout:
+        sys.stdout.write(proc.stdout)
+    if proc.stderr:
+        sys.stderr.write(proc.stderr)
+
     if proc.returncode == 0:
         print(f"\nOK: {env_name} setup() succeeded")
     else:
         print(f"\nFAILED: {env_name} setup() exited {proc.returncode}", file=sys.stderr)
+        hints = _suggest_hints(proc.stdout + proc.stderr)
+        if hints:
+            print("\nHints:", file=sys.stderr)
+            for h in hints:
+                print(f"  - {h}", file=sys.stderr)
     return proc.returncode

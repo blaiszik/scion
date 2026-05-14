@@ -46,6 +46,7 @@ When something works in `import` but fails later, suspect these (in order of fre
 scion init                                  # interactive setup of {root} + config + manifest
 scion install <env.py> [--models X]         # build a worker venv from PEP 723; slow (minutes)
 scion sync <env.py>                         # refresh env_source.py without rebuilding (fast)
+scion doctor                                # preflight cluster/root/cache/env readiness
 scion check <env> [--thorough]              # diagnose: setup() (default) + preload (--thorough)
 scion preload <env>                         # warm caches on a login node (downloads weights)
 scion status                                # show built envs + capabilities + cache sizes
@@ -56,9 +57,50 @@ Triage decision tree when something breaks:
 
 - "I edited the env file": `scion sync <env.py>` (don't rebuild)
 - "I changed the deps": `scion install <env.py> --force` (rebuild)
+- "I'm on a new cluster / something basic feels off": `scion doctor`
 - "I'm not sure if the env works at all": `scion check <env> --thorough`
 - "I want weights cached before a GPU job": `scion preload <env>` on a login node
 - "scion CLI behavior changed": `pip install --upgrade --force-reinstall git+...`
+
+### Doctor and layered cluster profiles
+
+`scion doctor` is the lightweight HPC preflight. It does **not** call model `setup()` or run inference; keep that boundary clear so the command stays cheap on login nodes. It reports:
+
+- cluster/root resolution, including layered profile source
+- root layout (`environments/`, `envs/`, `cache/`, `home/`, `.python/`)
+- cache/home writability
+- `{root}/cluster.toml` parsing and active env overlay
+- login-node thread caps (`OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS`)
+- runtime socket directory and Unix socket path-length risk
+- `uv` availability, Python version, and `nvidia-smi` GPU visibility
+- registered/built env completeness, optionally narrowed with `--env`
+
+Useful forms:
+
+```
+scion doctor
+scion doctor --cluster polaris
+scion doctor --cluster current
+scion doctor --root /path/to/scion --env boltz_env
+scion doctor --json
+```
+
+Cluster lookup is now layered. Built-ins live in `scion/clusters.py`, then user/site TOML overlays are read from `~/.config/scion/clusters.toml`, then `SCION_CLUSTERS_FILE` if set. Later layers replace earlier profiles with the same name. Use profiles for site metadata:
+
+```toml
+[clusters.perlmutter]
+root = "/global/common/software/scion"
+scheduler = "slurm"
+job_env_vars = ["SLURM_JOB_ID"]
+hostname_patterns = ["perlmutter*", "*.nersc.gov"]
+gpu_arch = "a100"
+cuda_driver_max = "12.4"
+runtime_dir = "$SCRATCH/.scion/run"
+```
+
+Important split: cluster profiles describe the site; `{root}/cluster.toml` only overlays environment variables for subprocesses. Do not put model args, checkpoint choices, or dependency pins in either one. Dependency truth remains PEP 723 in the env file.
+
+Runtime sockets default to the platform temp dir, but `SCION_RUNTIME_DIR` wins, then profile `runtime_dir`. Use this when a site has long temp paths, unusual `/tmp` behavior, or a policy requiring per-user runtime directories.
 
 ## 5. Things that look reasonable but aren't
 
@@ -85,11 +127,13 @@ When adding a new CLI command or env feature, prefer to factor the testable bit 
 - **Workers reuse model state across calls in a session.** Don't write capability methods that assume fresh state per call (e.g. caching globals based on the first call's args).
 - **The user-process and the worker-venv-process have different scion versions.** They communicate by protocol, not by shared in-process state. Wire-protocol changes need to be backward-compatible or behind a feature flag.
 - **`cluster.toml` overlays env vars only.** It is not a place to put model-tuning knobs. Those belong in env files or capability method args.
+- **Cluster profiles are separate from `cluster.toml`.** Add roots, scheduler metadata, job env vars, hostname patterns, CUDA driver notes, and runtime-dir preferences in `~/.config/scion/clusters.toml` or `SCION_CLUSTERS_FILE`; keep `{root}/cluster.toml` for env vars only.
 - **PEP 723 is the source of truth for env deps.** Don't add a parallel `requirements.txt` or `pyproject.toml` per env — `scion install` reads PEP 723 and forwards to uv.
 
 ## 8. When in doubt
 
 - `scion check --thorough` first. If it passes, the env is healthy.
+- `scion doctor` first when root resolution, scheduler context, cache writability, thread caps, `uv`, or GPU visibility is suspect.
 - If a fix takes more than two surgical `uv pip install` invocations, stop and `scion install --force` from a corrected env file instead.
 - Run pure logic locally (in the dev `.venv`) with `pytest tests/` before committing — most regressions surface there in 50 ms.
 - Read `README.md`'s "Lessons from the field" before debugging anything torch- or CUDA-related on a new cluster.

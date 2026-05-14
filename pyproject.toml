@@ -26,6 +26,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["scion"]
 
+# Ship the reference env files inside the wheel so `scion init` can offer
+# to install boltz_env / esm2_env without the user needing a git clone.
+# `scion/resources.py::find_bundled_environments_dir` looks here first.
+[tool.hatch.build.targets.wheel.force-include]
+"environments" = "scion/_bundled_environments"
+"cluster.toml.example" = "scion/_bundled_resources/cluster.toml.example"
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

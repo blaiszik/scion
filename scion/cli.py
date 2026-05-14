@@ -18,6 +18,7 @@ Commands:
 
     scion status [--root <path>]
     scion list [--root <path>]
+    scion doctor [--cluster <name>] [--root <path>] [--json]
     scion serve <model> [--root <path>] --socket <path> --checkpoint <name> [--device <dev>]
     scion resolve --cluster <name> [--json]
     scion manifest {show,push,init}
@@ -29,6 +30,7 @@ import sys
 
 from .commands import (
     cmd_check,
+    cmd_doctor,
     cmd_init,
     cmd_install,
     cmd_list,
@@ -78,6 +80,14 @@ def main():
     install_parser.add_argument("--force", action="store_true",
                                 help="Update registration and/or rebuild if exists")
     install_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    install_parser.add_argument(
+        "--no-preload",
+        action="store_true",
+        dest="no_preload",
+        help="Skip the auto-preload validation step after install. By default "
+             "scion install runs provider.preload() on CPU to surface dep "
+             "errors that only appear during model construction.",
+    )
     install_parser.set_defaults(func=cmd_install)
 
     # sync — refresh env_source.py inside built venvs without rebuilding them
@@ -141,7 +151,18 @@ def main():
             "isolating model-download or import errors from the RPC layer."
         ),
     )
-    check_parser.add_argument("env_name", help="Environment name (e.g., esm2_env)")
+    check_parser.add_argument(
+        "env_name",
+        nargs="?",
+        default=None,
+        help="Environment name (e.g., esm2_env). Omit with --all-envs.",
+    )
+    check_parser.add_argument(
+        "--all-envs",
+        action="store_true",
+        dest="all_envs",
+        help="Run check against every built env in series.",
+    )
     check_parser.add_argument(
         "--model",
         default=None,
@@ -165,6 +186,43 @@ def main():
              "missing CUDA kernel packages) rather than only at import time.",
     )
     check_parser.set_defaults(func=cmd_check)
+
+    # doctor
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Run HPC readiness diagnostics for this Scion installation",
+        description=(
+            "Check cluster/root resolution, cluster profile metadata, root "
+            "directory layout, cluster.toml overlays, login-node thread caps, "
+            "runtime socket directory, uv availability, GPU visibility, and "
+            "registered/built environment state. This does not run model setup; "
+            "use `scion check --thorough` for model inference-path validation."
+        ),
+    )
+    doctor_parser.add_argument(
+        "--cluster",
+        default=None,
+        help="Cluster profile name, or 'current' for hostname-based detection",
+    )
+    doctor_parser.add_argument(
+        "--root",
+        default=os.environ.get(SCION_ROOT_ENV),
+        help=f"Root directory (default: ${SCION_ROOT_ENV}, config, or detected cluster)",
+    )
+    doctor_parser.add_argument(
+        "--env",
+        dest="env_name",
+        default=None,
+        help="Optional built environment name to check (e.g., boltz_env)",
+    )
+    doctor_parser.add_argument(
+        "--all-envs",
+        action="store_true",
+        dest="all_envs",
+        help="Run doctor checks against every built env in series.",
+    )
+    doctor_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    doctor_parser.set_defaults(func=cmd_doctor)
 
     # preload
     preload_parser = subparsers.add_parser(

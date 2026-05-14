@@ -124,10 +124,17 @@ class EnvironmentManager:
           3. {root}/cluster.toml overlay (login_env or compute_env)
         """
         from .cluster_config import get_cluster_env
+        from .clusters import get_profile_for_root
 
         env = os.environ.copy()
         env.update(get_model_cache_env(self.root))
         env.update(get_cluster_env(self.root))
+        profile = get_profile_for_root(self.root)
+        if profile is not None and profile.runtime_dir:
+            env.setdefault(
+                "SCION_RUNTIME_DIR",
+                str(Path(os.path.expandvars(profile.runtime_dir)).expanduser()),
+            )
         return env
 
     def cleanup(self):
