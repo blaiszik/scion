@@ -217,16 +217,43 @@ def setup(model: str, device: str = "cuda"):
 
         def preload(self) -> None:
             """
-            Warm Boltz's weight cache.
+            Validate Boltz's CUDA-related deps and (where possible) warm
+            the weight cache with a 4-residue stub fold.
 
-            Called by ``scion preload``. The cheapest invocation that
-            pulls weights is a real prediction (Boltz's CLI has no
-            download-only flag), so this runs a 4-residue stub with the
-            minimum number of recycling steps. Expect a few minutes on
-            CPU and ~30s on GPU. After this returns, subsequent fold()
-            calls don't need network access.
+            On GPU this is the cheapest invocation that pulls weights
+            (Boltz's CLI has no download-only flag). On CPU-only login
+            nodes — which is where `scion install` runs its auto-preload —
+            Boltz-2 has an upstream bug: its LightningModule.setup()
+            calls torch.cuda.get_device_properties() unconditionally,
+            even when invoked with --accelerator cpu, and crashes with
+            "No CUDA GPUs are available". The import-only deps check
+            *above* the fold call still catches the structural paper cuts
+            (missing cuequivariance, torch/driver mismatch, NCCL ABI
+            skew); we suppress only that specific upstream error and
+            tell the user how to warm weights from inside a GPU job.
             """
-            self.fold("MKTA", num_recycles=1)
+            # Force the imports Boltz makes during model construction.
+            # These are the lines that have surfaced the historical
+            # paper cuts at runtime instead of install time.
+            import cuequivariance_torch  # noqa: F401
+
+            try:
+                self.fold("MKTA", num_recycles=1)
+            except RuntimeError as e:
+                if (
+                    self.accelerator == "cpu"
+                    and "No CUDA GPUs are available" in str(e)
+                ):
+                    print(
+                        "[boltz_env.preload] imports validated; skipping "
+                        "weight warm-up because Boltz-2's CPU code path "
+                        "crashes on no-GPU nodes (upstream bug). To cache "
+                        "weights, run inside a GPU job:\n"
+                        "    scion preload boltz_env --device cuda",
+                        flush=True,
+                    )
+                    return
+                raise
 
         def fold(
             self,
