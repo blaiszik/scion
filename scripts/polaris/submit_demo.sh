@@ -39,16 +39,36 @@ if ! type module >/dev/null 2>&1; then
     fi
 fi
 module use /soft/modulefiles 2>/dev/null || true
-module load conda
+
+# `module load conda` is best-effort. It's needed for `conda activate`
+# under SCION_CONDA_ENV, but the default CLI-venv path is self-contained
+# once activated. The compute-node Lmod cache occasionally goes stale
+# and reports "module unknown: conda" even when the modulefile exists;
+# --ignore_cache is the ALCF-documented workaround.
+if ! module load conda 2>/dev/null; then
+    module --ignore_cache load conda 2>/dev/null || \
+        echo "Note: 'module load conda' unavailable on this node; relying on the activated venv for python."
+fi
 
 # Two ways to bring scion into scope:
-#   SCION_CONDA_ENV=<name>   -> conda activate <name>
+#   SCION_CONDA_ENV=<name>   -> conda activate <name>     (requires conda on PATH)
 #   (default)                -> source ~/.venvs/scion-cli/bin/activate
 if [ -n "${SCION_CONDA_ENV:-}" ]; then
+    if ! type conda >/dev/null 2>&1; then
+        echo "Error: SCION_CONDA_ENV=$SCION_CONDA_ENV but conda is not on PATH." >&2
+        echo "  Unset SCION_CONDA_ENV to fall back to the CLI venv, or make" >&2
+        echo "  sure 'module load conda' works on this compute node." >&2
+        exit 1
+    fi
     # shellcheck disable=SC1091
     conda activate "$SCION_CONDA_ENV"
 else
     CLI_VENV="${CLI_VENV:-$HOME/.venvs/scion-cli}"
+    if [ ! -f "$CLI_VENV/bin/activate" ]; then
+        echo "Error: $CLI_VENV/bin/activate not found." >&2
+        echo "  Re-run scripts/polaris/install.sh from a login node." >&2
+        exit 1
+    fi
     # shellcheck disable=SC1091
     source "$CLI_VENV/bin/activate"
 fi
