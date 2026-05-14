@@ -104,13 +104,19 @@ fi
 # ---------------------------------------------------------------------------
 # 5. Build envs from the wheel-bundled files
 # ---------------------------------------------------------------------------
-BUNDLED=$(python -c "import scion, pathlib; print(pathlib.Path(scion.__file__).resolve().parent / '_bundled_environments')")
-if [ ! -d "$BUNDLED" ]; then
-    echo "Error: bundled env files not found at $BUNDLED" >&2
+# Locate the bundled env files via scion.resources, which handles both
+# the wheel-install case (_bundled_environments under the package) and
+# the source-checkout case (sibling environments/ next to the package).
+# Run from /tmp to keep CWD out of sys.path[0] — otherwise a stray
+# `scion/` directory in the user's CWD can shadow the installed package.
+BUNDLED=$(cd /tmp && python -c "from scion.resources import find_bundled_environments_dir as f; p=f(); print(p or '')")
+if [ -z "$BUNDLED" ] || [ ! -d "$BUNDLED" ]; then
+    echo "Error: could not locate bundled env files." >&2
     echo "  Re-install scion from the current main branch:" >&2
     echo "    pip install --upgrade --force-reinstall $SCION_GIT_URL" >&2
     exit 1
 fi
+echo "  bundled envs: $BUNDLED"
 
 build_if_missing() {
     local env_name="$1"
