@@ -24,6 +24,7 @@ from .pep723 import parse_pep723_metadata
 # real envs need them — speculative entries just rot.
 PYPI_TO_IMPORT: dict[str, str] = {
     "fair-esm": "esm",
+    "biopython": "Bio",
 }
 
 

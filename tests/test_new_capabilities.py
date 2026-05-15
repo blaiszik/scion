@@ -64,18 +64,22 @@ def test_ligandmpnn_env_file_declares_design_capability():
     meta = parse_pep723_metadata(path.read_text())
     assert meta is not None
     deps = " ".join(meta.get("dependencies", []))
+    # We don't pip-install the LigandMPNN repo (it has no pyproject.toml);
+    # the env clones it at setup() and invokes run.py as a subprocess.
+    # The PEP 723 deps are just the Python libs run.py needs.
     assert "torch" in deps
-    assert "ligandmpnn" in deps
+    assert "prody" in deps
+    assert "biopython" in deps
 
 
 def test_diffdock_env_file_declares_dock_capability():
+    """diffdock_env is scaffold-only — assert the capability + a placeholder dep."""
     path = REPO_ENVIRONMENTS / "diffdock_env.py"
     assert get_capabilities(path) == ["dock"]
     meta = parse_pep723_metadata(path.read_text())
     assert meta is not None
     deps = " ".join(meta.get("dependencies", []))
     assert "torch" in deps
-    assert "diffdock" in deps
 
 
 def test_new_env_files_lint_clean():

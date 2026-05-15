@@ -1,26 +1,48 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#     # DiffDock-L's repo is the source of truth; not on PyPI yet.
-#     "diffdock @ git+https://github.com/gcorso/DiffDock@main",
-#     # Same torch cap as the other shipped envs.
+#     # NOTE: this dep list is INTENTIONALLY a placeholder. DiffDock-L's
+#     # upstream requirements.txt pins torch==1.13.1+cu117 plus exact
+#     # versions of torch-cluster/scatter/sparse from a torch-1.13-specific
+#     # wheel index, and pulls openfold (which has CUDA-kernel compile
+#     # steps) and fair-esm[esmfold]. None of that resolves cleanly on
+#     # Polaris's CUDA-12.8 driver out of the box. Wiring this needs a
+#     # multi-hour Polaris session; see the "wire-up checklist" at the
+#     # bottom of this file. Until then this env is intentionally not
+#     # buildable — `scion install diffdock_env.py` will fail, by design.
 #     "torch>=2.6,<2.9",
-#     "numpy>=1.24",
+#     "numpy>=1.23,<2",
 #     "rdkit",
 #     "biopython>=1.83",
-#     # Geometric deep learning stack DiffDock builds on.
-#     "torch-geometric>=2.5",
+#     "prody>=2.4",
 # ]
 # ///
 """
-DiffDock-L environment for Scion.
+DiffDock-L environment for Scion — SCAFFOLD ONLY (not yet wireable).
 
-Capability: ``dock`` — fast pose prediction for a small molecule against
-a protein receptor. Use this to rank a 1000-ligand library in minutes,
-then take the top hits to Boltz-2 for precise co-fold + affinity.
+Capability: ``dock`` — fast pose prediction for a small molecule
+against a protein receptor. Intended to power the hierarchical
+"screen 1000 ligands quickly, refine top-K with Boltz" workflow.
 
-Status: scaffold. Provider wires the call surface but the inference
-path raises NotImplementedError pending end-to-end testing on Polaris.
+Why this isn't wired yet (read before touching):
+
+* Upstream requirements.txt (https://github.com/gcorso/DiffDock)
+  pins ``torch==1.13.1+cu117``, which is incompatible with Polaris's
+  CUDA-12.8 driver via the default PyPI wheels. To run on Polaris we
+  need to use modern torch (>=2.6) and pick matching pyg companion
+  wheels (``torch-cluster``, ``torch-scatter``, ``torch-sparse``)
+  from https://data.pyg.org/whl/torch-<X.Y>.0+cu<NN>.html .
+* ``openfold @ git+...`` is in upstream's requirements but does CUDA
+  kernel compilation at install time; it needs ``nvcc`` matching the
+  cluster's CUDA, plus glibc compatibility on the build node.
+* DiffDock-L pulls receptor/ligand weights from HF Hub on first run
+  (``gcorso/DiffDock-L``); needs HF Hub reachable at install / preload
+  time.
+
+For now, ``scion install diffdock_env.py`` is expected to fail and
+the provider's ``dock`` method raises ``NotImplementedError``. Wiring
+this cleanly is its own deliverable; the LigandMPNN env covers the
+multi-model demo (fold -> design -> fold).
 
 Reference: https://github.com/gcorso/DiffDock
 """
@@ -33,24 +55,14 @@ DEFAULT_CHECKPOINT = "diffdock_l"
 
 
 def setup(model: str, device: str = "cuda"):
-    """
-    Load a DiffDock-L provider.
-
-    Args:
-        model: Checkpoint name; defaults to the DiffDock-L weights.
-        device: PyTorch device. GPU strongly recommended — CPU dock is
-            slow enough that you'd prefer Boltz directly.
-
-    Returns:
-        Provider with a ``dock(...)`` method.
-    """
+    """Scaffolded entry point. See the wire-up checklist at the bottom."""
     try:
         import torch  # noqa: F401
-        import torch_geometric  # noqa: F401
     except ImportError as e:
         raise ImportError(
-            "DiffDock's deep-learning stack is not installed in this "
-            "environment. Build with `scion install diffdock_env.py`."
+            "torch not installed in this environment. DiffDock-L's dep "
+            "tree is not yet pinned for Polaris — see this file's "
+            "docstring for the known sticky points."
         ) from e
 
     checkpoint = model or DEFAULT_CHECKPOINT
@@ -61,39 +73,29 @@ def setup(model: str, device: str = "cuda"):
             self.device = device
 
         def preload(self) -> None:
-            """Validate that the geometric-DL stack is importable."""
-            # DiffDock's import name is the source of truth — confirm
-            # at first Polaris build and pin here.
-            import torch_geometric  # noqa: F401
-            # When the wire-up below is done, add a 5-atom ligand
-            # dummy-dock against a tiny pseudo-receptor as a deeper check.
-
-        def dock(
-            self,
-            receptor_mmcif: str,
-            ligand_smiles: str,
-            num_poses: int = 10,
-            **kwargs,
-        ) -> dict:
-            """
-            Wire-up checklist:
-
-            1. Write receptor_mmcif to a tempfile; DiffDock's CLI takes
-               a path. (Or use its Python API if exposed; check upstream.)
-            2. Pass ``ligand_smiles`` directly — DiffDock accepts SMILES.
-            3. Run inference (``num_poses`` samples).
-            4. Read back the SDF poses and confidence scores.
-            5. Return a dict matching capabilities.DockResult:
-                  {
-                    "poses":   [<SDF string per pose>],
-                    "scores":  [<confidence per pose, higher = better>],
-                    "mmcif":   receptor_mmcif,  # echo for the caller
-                  }
-            """
             raise NotImplementedError(
-                "diffdock_env.dock is scaffolded but the inference "
-                "path is not yet wired. See the docstring in this "
-                "method for the five-step plan."
+                "diffdock_env is scaffold-only. The dep tree (torch + "
+                "pyg companion wheels + openfold + fair-esm) needs a "
+                "dedicated Polaris session to wire. See this file's "
+                "module docstring for the known sticky points."
+            )
+
+        def dock(self, receptor_mmcif, ligand_smiles, num_poses=10, **kwargs):
+            raise NotImplementedError(
+                "diffdock_env.dock is not wired yet. Wire-up checklist:\n"
+                "  1. Pin pyg companion wheels (torch-cluster/scatter/\n"
+                "     sparse) from data.pyg.org's torch+cu index in\n"
+                "     [tool.uv] extra-index-url in the PEP 723 block.\n"
+                "  2. Decide: vendor openfold (clone in setup()) or pip\n"
+                "     install it. Vendoring sidesteps the CUDA kernel\n"
+                "     compile, like ligandmpnn_env does for openfold.\n"
+                "  3. Clone DiffDock repo to $HOME/diffdock-install/src,\n"
+                "     fetch DiffDock-L weights from HF Hub.\n"
+                "  4. From dock(): write receptor_mmcif to a tempfile\n"
+                "     (.pdb form via Bio.PDB), pass --protein_path and\n"
+                "     --ligand_description=<SMILES> to inference.py,\n"
+                "     read back SDF poses + confidence scores.\n"
+                "  5. Return dict matching capabilities.DockResult."
             )
 
     return DiffDockProvider()
