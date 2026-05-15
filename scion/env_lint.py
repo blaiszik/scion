@@ -47,6 +47,9 @@ def _dep_name(dep_spec: str) -> str:
         head, _, rest = s.partition("[")
         _, _, tail = rest.partition("]")
         s = head + tail
+    # PEP 508 direct URL reference: "pkgname @ url" — strip the URL half.
+    if "@" in s:
+        s = s.split("@", 1)[0]
     for op in (">=", "<=", "==", "~=", "!=", ">", "<", ";"):
         idx = s.find(op)
         if idx >= 0:

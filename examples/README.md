@@ -9,6 +9,7 @@ and a built env on a cluster are the only prerequisites.
 | `fold_basic.py` | Boltz monomer fold of a short sequence; writes mmCIF + confidence JSON. | First thing after `scion install boltz_env.py` succeeds. Validates that the fold path works end-to-end. |
 | `fold_drug_discovery.py` | Protein + ligand (SMILES or CCD) co-fold with binding-affinity prediction. | After `fold_basic.py` succeeds. The flagship drug-discovery workflow. |
 | `showcase.py` | Same drug-discovery call as above but stripped to the minimum (no CLI, no helpers). | Tweet-sized screenshot of what Scion does. |
+| `lead_optimization.py` | Boltz baseline → LigandMPNN redesign → Boltz validation. Three Scion capabilities composed end-to-end (fold + design + fold). | Once `ligandmpnn_env` is built and wired. Steps 1 & 3 run today against `boltz_env`; step 2 is scaffolded. |
 
 ## Quick start
 

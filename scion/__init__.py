@@ -8,7 +8,13 @@ over a Unix domain socket.
 
 __version__ = "0.1.0"
 
-from .capabilities import CAPABILITIES, EmbedResult, FoldResult
+from .capabilities import (
+    CAPABILITIES,
+    DesignResult,
+    DockResult,
+    EmbedResult,
+    FoldResult,
+)
 from .client import ScionClient
 from .cluster_config import (
     ClusterConfig,
@@ -25,6 +31,8 @@ from .clusters import (
     get_root_for_cluster,
 )
 from .config import UserConfig, load_config, save_config
+from .designer import Designer
+from .docker import Docker
 from .embedder import Embedder
 from .environment import (
     EnvironmentManager,
@@ -53,8 +61,12 @@ __all__ = [
     "__version__",
     "Folder",
     "Embedder",
+    "Designer",
+    "Docker",
     "FoldResult",
     "EmbedResult",
+    "DesignResult",
+    "DockResult",
     "CAPABILITIES",
     "ScionWorkerError",
     "WorkerSetupFailed",

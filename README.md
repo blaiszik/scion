@@ -197,6 +197,8 @@ provider.embed(
 | fold | `chai` | `chai_env` | `chai1` | planned |
 | embed | `esm2` | `esm2_env` | `esm2_t33_650M_UR50D` | wired |
 | embed | `esmc` | `esmc_env` | `esmc_300m` | planned |
+| design_sequence | `ligandmpnn` | `ligandmpnn_env` | `ligandmpnn_v_32_010_25` | scaffolded (env builds; provider raises until Polaris-wired) |
+| dock | `diffdock` | `diffdock_env` | `diffdock_l` | scaffolded (env builds; provider raises until Polaris-wired) |
 
 `environments/` ships `boltz_env.py` (skeleton showing the fold contract) and `esm2_env.py` (working `embed` against `fair-esm`). Adding another model is a small PEP 723 file in the same directory.
 
